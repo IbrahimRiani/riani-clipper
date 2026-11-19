@@ -1,0 +1,136 @@
+# Configuración de Claude Clipper.
+# Todo lo que se puede ajustar sin tocar código está aquí.
+
+llm:
+  # DeepSeek habla el formato de OpenAI. La clave va en .env (DEEPSEEK_API_KEY).
+  # Nombre de modelo verificado en https://api-docs.deepseek.com (nov-2026).
+  base_url: https://api.deepseek.com
+  model: deepseek-flash
+  # deepseek-flash "piensa" por defecto (gasta más tokens). Para puntuar
+  # transcripts no hace falta: disabled = respuesta directa y barata.
+  thinking: disabled
+  timeout_seconds: 180
+
+transcription:
+  # faster-whisper local. "large-v3-turbo" va bien en español con una RTX 3080.
+  # En un equipo sin GPU usa device: cpu, compute: int8 y model: small.
+  model: large-v3-turbo
+  device: cuda          # cuda | cpu
+  compute: float16      # float16 (GPU) | int8 (CPU)
+  # Idioma del streamer: "es", "en"... o "auto". Fíjalo si el juego habla en
+  # otro idioma (p. ej. GTA en inglés con streamer en español).
+  language: es
+
+clips:
+  min_seconds: 20
+  max_seconds: 60
+
+render:
+  workers: 2            # clips renderizados a la vez
+  encoder: auto         # auto (usa NVENC de la GPU si funciona) | nvenc | x264
+  scene_engine: pyscenedetect   # pyscenedetect | transnetv2
+
+audio_peaks:
+  # Picos de volumen (gritos, risas) como pista extra para DeepSeek.
+  enabled: true
+  percentile: 98      # solo el 2% más fuerte del video
+  min_db_over: 8      # y al menos 8 dB por encima de la mediana del habla
+  merge_seconds: 4    # picos más juntos que esto cuentan como uno
+  max_peaks: 60
+
+layout:
+  mode: auto            # auto | gaming | chatting | podcast (--layout lo sobrescribe)
+  sample_frames: 60     # frames repartidos por todo el video para votar la webcam
+  # --- detección de webcam ---
+  min_cam_hit_ratio: 0.35     # la cara debe estar en la misma zona en >=35% de frames
+  max_cam_face_frac: 0.12     # cara de webcam: menos del 12% del ancho (reales: 6-9%; un primer plano: 16%)
+  max_cam_area: 0.35          # la cam no puede ocupar más del 35% del frame
+  cam_max_edge_dist: 0.08     # la cam debe estar pegada a un borde (a menos del 8%)
+  cam_min_aspect: 0.9         # y ser apaisada (ancho/alto >= 0,9)
+  min_face_to_cam_width: 0.2  # y la cara ocupar >= 20% de su ancho (cabeza y hombros)
+  edge_min_score: 0.5         # continuidad del marco + salto quieto/movimiento
+  edge_contrast_weight: 1.0
+  # --- auto-layout ---
+  gaming_max_cam_area: 0.30
+  gaming_min_scene_motion: 15
+  gaming_min_cam_ratio: 0.6   # gaming: la webcam se ve en >=60% del vídeo (si no, chatting)
+  chatting_min_face_frac: 0.05
+  # --- chatting (escena a escena) ---
+  scene_cut_threshold: 0.55   # sensibilidad de los cortes de escena (más alto = más cortes)
+  min_scene_seconds: 0.8      # escenas más cortas heredan el modo de la anterior
+  track_min_face_frac: 0.05   # cara "grande" para seguirla: >=5% del ancho
+  sample_interval: 0.33       # seguimiento: detectar la cara cada 0,33 s
+  deadzone_frac: 0.18         # margen cómodo: mientras la cara no se acerque tanto al borde, la cámara no se mueve
+  face_margin_frac: 0.08      # límite duro: la cara nunca más cerca del borde que esto
+  ema_alpha: 0.35             # suavizado del movimiento (más bajo = más suave/lento)
+  zoom: 1.0                   # 1.0 = alto completo; 0.85 = un poco más cerca de la cara
+  min_cam_hits: 5             # la cam debe verse en al menos 5 de los frames analizados
+  min_face_motion: 0.02       # caras que no se mueven nada = pósters/dibujos (se ignoran)
+  cam_template_min_score: 0.35  # buscar la cam por su aspecto (aunque la mueva o no se vea la cara)
+  scene_diff_threshold: 38    # corte de escena también por cambio de imagen (plano general -> primer plano)
+  # --- podcast (2+ personas en plano; se aplica escena a escena) ---
+  podcast_enabled: true
+  podcast_mode: auto          # auto (switch + split) | switch (solo quien habla) | split (siempre las dos)
+  min_switch_seconds: 1.5     # mínimo entre cambios de persona (evita parpadeo)
+  rapid_window: 4.0           # si en 4 s hay...
+  rapid_switches: 3           # ...3 cambios de quien habla -> split
+  podcast_min_presence: 0.5   # una persona cuenta si sale en >=50% de la escena
+  podcast_min_crop_frac: 0.6  # el recorte nunca es menor del 60% de la altura (evita pixelado)
+  podcast_max_head_drop: 0.18 # cabezas mucho más abajo que las demás = público (se ignoran)
+  person_min_conf: 0.35       # confianza mínima del detector de personas (YOLO)
+  # --- composición gaming (1080x1920) ---
+  cam_min_frac: 0.30          # alto de la webcam: entre 30% y 40% de la pantalla
+  cam_max_frac: 0.40
+  cam_present_min: 0.3        # si la cara sale en <30% del clip -> solo juego
+  game_fit_max_aspect: 1.6    # juegos más "cuadrados" que esto (4:3) se ven casi enteros
+  game_fit_keep: 0.9          # ...perdiendo como mucho un 5% por cada lado
+  cam_grow_max_frac: 0.42     # si sobra sitio, la webcam crece hasta el 42%
+  center_stack: true          # lo que aún sobre, repartido arriba y abajo
+  game_min_keep: 0.5          # juegos 16:9: como mínimo se ve el 50% del ancho
+  game_min_keep_no_cam: 0.42
+  fill: blur                  # hueco bajo el juego: blur | black
+  caption_offset_px: 90       # subtítulos 90 px por debajo de la línea cam/juego
+  cam_inset_frac: 0.025       # recorta la cam un 2,5% hacia dentro (quita el hilo de juego del borde)
+  debug_video: true           # video con las cajas dibujadas en debug/
+
+dead_air:
+  # Pantallas de BRB / espera / intro: sin voz + imagen quieta o en bucle + sin cara.
+  enabled: true
+  sample_step: 2.0          # (solo si el vídeo tiene pocos fotogramas clave)
+  max_motion: 10.0          # "imagen quieta": partida >15, pantalla de espera animada 3-9
+  loop_seconds: 20          # animación en bucle: se repite en menos de 20 s
+  max_words_10s: 2          # "sin voz": como mucho 2 palabras cada 10 s
+  min_seconds: 20           # solo zonas de 20 s o más
+  max_clip_overlap: 0.25    # se descarta un clip si cae >25% en una zona muerta
+  check_faces: false        # true = no marcar como muerta si se ve una cara moviéndose
+
+cuts:
+  sentence_snap: true       # cortar en final de frase (no en mitad del remate)
+  pause_seconds: 0.7        # una pausa así de larga también cuenta como fin de frase
+  max_extend_seconds: 6     # cuánto puede alargarse el final para acabar la frase
+  max_start_back_seconds: 4 # cuánto puede adelantarse el inicio para empezar la frase
+
+captions:
+  # Estilos: default, hormozi, pill, lime, oneword, cine, clean
+  preset: oneword
+  # Fuentes extra en assets/fonts (Google Fonts, OFL): Bangers, Barlow Condensed Black,
+  # Bebas Neue, Bungee, Chicle, Knewave, Lilita One, Luckiest Guy, Passion One,
+  # Paytone One, Poppins Black, Rubik Mono One, Russo One, Sigmar One, Titan One.
+  overrides:
+    font_name: Luckiest Guy
+    font_size: 25           # oneword trae 70: demasiado grande
+    font_color: "#FFC93C"   # dorado
+    highlight_color: "#FFC93C"
+    border_width: 3         # contorno más fino para letra pequeña
+  max_width: 0.86           # una palabra nunca ocupa más del 86% del ancho
+  strip_punctuation: true   # "HOSTIA," -> "HOSTIA" (se mantienen ¿? ¡!)
+
+emojis:
+  enabled: true             # DeepSeek elige emojis; se dibujan los 3D de Noto (Google)
+  min_per_clip: 2
+  max_per_clip: 4
+  style: 3D                 # 3D | 2D
+  size: 140                 # px de ancho del emoji
+  duration: 1.4             # segundos en pantalla
+  gap_above_caption: 56     # distancia del centro del subtítulo al borde de abajo del emoji
+  face_overlap_max: 1.0     # 1.0 = siempre centrado encima del texto (aunque tape la boca)

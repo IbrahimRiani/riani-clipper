@@ -1,0 +1,18 @@
+# torch/torchvision se instalan aparte (ver README) para elegir CUDA o CPU.
+scenedetect==0.7
+transnetv2-pytorch==1.0.5
+ultralytics==8.4.46
+tqdm
+yt-dlp
+faster-whisper==1.2.1
+py3langid==0.3.0
+google-genai==1.75.0   # OpenShorts lo importa; no se usa ni se necesita clave de Google
+python-dotenv
+mediapipe==0.10.14
+httpx
+Pillow
+pydantic
+huggingface_hub
+pyyaml
+fonttools
+gradio==5.49.1
