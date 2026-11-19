@@ -48,6 +48,10 @@ layout:
   cam_max_edge_dist: 0.08     # la cam debe estar pegada a un borde (a menos del 8%)
   cam_min_aspect: 0.9         # y ser apaisada (ancho/alto >= 0,9)
   min_face_to_cam_width: 0.2  # y la cara ocupar >= 20% de su ancho (cabeza y hombros)
+  cam_person_fallback: true   # si no se ven caras claras, buscar la cam con el detector de personas (YOLO)
+  person_min_hit_ratio: 0.35  # ...y exigir que esa persona salga en >=35% del vídeo
+  cam_follow_changes: true    # si la cam se mueve o se agranda (zoom) dentro de un clip, seguirla por tramos
+  cam_change_min_seconds: 2.0 # cambios más cortos que esto se ignoran
   edge_min_score: 0.5         # continuidad del marco + salto quieto/movimiento
   edge_contrast_weight: 1.0
   # --- auto-layout ---

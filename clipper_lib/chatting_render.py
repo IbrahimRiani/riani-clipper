@@ -114,8 +114,16 @@ def _cam_by_template(frames, cam, W, cfg):
     consistent = sum(1 for x, y in zip(xs, ys) if abs(x - mx) <= tol and abs(y - my) <= tol)
     if consistent < max(2, 0.5 * len(frames)):
         return None  # sale en sitios distintos: coincidencia casual
+    k = float(np.median([m[3] for m in hits]))
     h, w = tpl.shape[:2]
-    return [int(mx), int(my), int(w), int(h)]
+    return [int(mx), int(my), int(w * k), int(h * k)]
+
+
+def _scale_face(cam, rect):
+    """Posición de la cara dentro de una cam movida y/o agrandada."""
+    k = rect[2] / max(1, cam["rect"][2])
+    fx, fy, fw, fh = cam["face"][:4]
+    return [rect[0] + (fx - cam["rect"][0]) * k, rect[1] + (fy - cam["rect"][1]) * k, fw * k, fh * k]
 
 
 def _classify(frames, analysis, cfg):
@@ -132,9 +140,7 @@ def _classify(frames, analysis, cfg):
         if rect:
             if _iou(rect, cam["rect"]) > 0.5:
                 return "cam_top", analysis
-            dx, dy = rect[0] - cam["rect"][0], rect[1] - cam["rect"][1]
-            moved = {**cam, "rect": rect,
-                     "face": [cam["face"][0] + dx, cam["face"][1] + dy, *cam["face"][2:]]}
+            moved = {**cam, "rect": rect, "face": _scale_face(cam, rect)}
             return "cam_top", {**analysis, "webcam": moved}
     in_cam = border = big = 0
     small_elsewhere = 0

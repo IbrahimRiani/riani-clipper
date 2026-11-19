@@ -152,13 +152,17 @@ def plan_clip(clip_path, analysis, cfg):
                 mx = float(np.median([m[0] for m in ms]))
                 my = float(np.median([m[1] for m in ms]))
                 same = sum(1 for m in ms if abs(m[0] - mx) <= 0.03 * W and abs(m[1] - my) <= 0.03 * H)
-                if same >= max(2, 0.5 * len(sub)) and (abs(mx - x) > 0.03 * W or abs(my - y) > 0.03 * H):
-                    dx, dy = int(mx) - x, int(my) - y
-                    cam = {**cam, "rect": [int(mx), int(my), w, h],
-                           "face": [cam["face"][0] + dx, cam["face"][1] + dy, *cam["face"][2:]]}
+                k = float(np.median([m[3] for m in ms]))
+                moved = abs(mx - x) > 0.03 * W or abs(my - y) > 0.03 * H or abs(k - 1) > 0.1
+                if same >= max(2, 0.5 * len(sub)) and moved:
+                    # Movida y/o agrandada (escena "ampliada" del streamer).
+                    fx, fy, fw, fh = cam["face"][:4]
+                    nw, nh = int(w * k), int(h * k)
+                    cam = {**cam, "rect": [int(mx), int(my), nw, nh],
+                           "face": [mx + (fx - x) * k, my + (fy - y) * k, fw * k, fh * k]}
                     cam_rect = tuple(cam["rect"])
-                    x, y = cam_rect[0], cam_rect[1]
-                    plan["cam_moved_to"] = [x, y]
+                    x, y, w, h = cam_rect
+                    plan["cam_moved_to"] = [x, y, w, h]
         for _, fr in sub:
             if any(x <= f[0] + f[2] / 2 <= x + w and y <= f[1] + f[3] / 2 <= y + h
                    for f in webcam.detect_faces(fr)):
@@ -191,6 +195,14 @@ def plan_clip(clip_path, analysis, cfg):
     crop = _crop_to_aspect(game, OUT_W / geo["game_h"], center)
     crop = _avoid_cam(crop, game, cam_rect if plan["mode"] == "cam_top" else None)
     plan["game_crop"] = list(crop)
+    if plan["mode"] == "cam_top" and cam_rect and _overlap(crop, cam_rect):
+        # No se pudo esquivar (cam muy grande): se difumina dentro del juego
+        # para que no salga dos veces.
+        ix0, iy0 = max(crop[0], cam_rect[0]), max(crop[1], cam_rect[1])
+        ix1 = min(crop[0] + crop[2], cam_rect[0] + cam_rect[2])
+        iy1 = min(crop[1] + crop[3], cam_rect[1] + cam_rect[3])
+        plan["cam_in_game"] = [_even(ix0 - crop[0]), _even(iy0 - crop[1]),
+                               _even(ix1 - ix0), _even(iy1 - iy0)]
     plan["fill"] = cfg.get("fill", "blur")
     return plan
 
@@ -236,7 +248,13 @@ def _filter_graph(plan):
     else:
         parts.append(f"[c]crop={gw}:{gh}:{gx}:{gy},scale=270:480:force_original_aspect_ratio=increase,"
                      f"crop=270:480,boxblur=12:2,eq=brightness=-0.12,scale={OUT_W}:{OUT_H},setsar=1[bg0]")
-    parts.append(f"[b]crop={gw}:{gh}:{gx}:{gy},scale={OUT_W}:{plan['game_h']},setsar=1[game]")
+    if plan.get("cam_in_game") and plan["cam_in_game"][2] > 4 and plan["cam_in_game"][3] > 4:
+        bx, by, bw, bh = plan["cam_in_game"]
+        parts.append(f"[b]crop={gw}:{gh}:{gx}:{gy},split=2[g0][g1]")
+        parts.append(f"[g1]crop={bw}:{bh}:{bx}:{by},boxblur=25:3[gb]")
+        parts.append(f"[g0][gb]overlay={bx}:{by},scale={OUT_W}:{plan['game_h']},setsar=1[game]")
+    else:
+        parts.append(f"[b]crop={gw}:{gh}:{gx}:{gy},scale={OUT_W}:{plan['game_h']},setsar=1[game]")
     if plan["mode"] == "cam_top":
         cx, cy, cw, ch = plan["cam_crop"]
         parts.append(f"[a]crop={cw}:{ch}:{cx}:{cy},scale={OUT_W}:{plan['cam_h']},setsar=1[cam]")
@@ -256,9 +274,133 @@ def _encode_args():
         return ["-c:v", "libx264", "-preset", "medium", "-crf", "18"]
 
 
+def cam_timeline(clip_path, analysis, cfg, every=1.0):
+    """Posición/tamaño de la cam a lo largo del clip, por su aspecto.
+
+    Devuelve [(inicio, fin, rect)] si la cam CAMBIA durante el clip (zoom
+    temporal de la escena del streamer, o la mueve), o [] si no cambia."""
+    cam = analysis.get("webcam")
+    if not cam or not cam.get("template") or not os.path.exists(cam["template"]):
+        return []
+    tpl = cv2.imread(cam["template"])
+    W, H = analysis["width"], analysis["height"]
+    thr = cfg.get("cam_template_min_score", 0.35)
+    cap = cv2.VideoCapture(clip_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    step = max(1, int(fps * every))
+    x0, y0, w0, h0 = cam["rect"]
+    labels = []  # (t, rect o None)
+    for idx in range(total):
+        # Lectura de corrido (saltar con set() en vídeo comprimido era lo lento).
+        if not cap.grab():
+            break
+        if idx % step:
+            continue
+        ok, fr = cap.retrieve()
+        if not ok:
+            break
+        m = webcam.find_by_template(fr, tpl)
+        if m and m[2] >= thr:
+            x, y, s, k = m
+            # Redondear: misma posición/tamaño = misma etiqueta.
+            if abs(x - x0) <= 0.03 * W and abs(y - y0) <= 0.03 * H and abs(k - 1) <= 0.1:
+                rect = (x0, y0, w0, h0)
+            else:
+                rect = (int(round(x / 8) * 8), int(round(y / 8) * 8), int(w0 * k), int(h0 * k))
+        else:
+            rect = None
+        labels.append((idx / fps, rect))
+    cap.release()
+    dur = total / fps
+    # Tramos de etiqueta igual; los huecos (no se encontró) heredan el anterior.
+    def same(r1, r2):
+        if r1 is None or r2 is None:
+            return r1 is r2
+        return all(abs(p - q) <= 0.03 * max(W, H) for p, q in zip(r1, r2))
+
+    runs = []
+    for t, r in labels:
+        if r is None and runs:
+            r = runs[-1][2]
+        if runs and same(runs[-1][2], r):
+            runs[-1][1] = t + every
+        else:
+            runs.append([t, t + every, r])
+    # Tramos cortos (< min) se unen al anterior: evita parpadeos.
+    min_len = cfg.get("cam_change_min_seconds", 2.0)
+    merged = []
+    for a, b, r in runs:
+        if merged and (b - a < min_len or same(merged[-1][2], r)):
+            merged[-1][1] = b
+        else:
+            merged.append([a, b, r])
+    merged = [m for m in merged if m[2] is not None] or merged
+    if len(merged) <= 1:
+        return []
+    merged[0][0], merged[-1][1] = 0.0, dur
+    for i in range(1, len(merged)):
+        merged[i][0] = merged[i - 1][1]
+    return [(round(a, 2), round(b, 2), list(r)) for a, b, r in merged]
+
+
+def _render_segments(clip_path, out_path, analysis, cfg, tl):
+    """Renderiza cada tramo con su posición de cam y los pega (audio del clip)."""
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="cam_")
+    geo = video_geometry(analysis, cfg)
+    plans, parts = [], []
+    try:
+        for k, (a, b, rect) in enumerate(tl):
+            seg = os.path.join(tmp, f"s{k}.mp4")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", clip_path, "-ss", f"{a:.3f}",
+                            "-to", f"{b:.3f}", "-an", *_encode_args(), seg], check=True)
+            cam = analysis["webcam"]
+            kf = rect[2] / max(1, cam["rect"][2])
+            fx, fy, fw, fh = cam["face"][:4]
+            moved = {**cam, "rect": rect,
+                     "face": [rect[0] + (fx - cam["rect"][0]) * kf, rect[1] + (fy - cam["rect"][1]) * kf,
+                              fw * kf, fh * kf], "template": None}
+            ana = {**analysis, "webcam": moved}
+            plan = plan_clip(seg, ana, {**cfg, "cam_present_min": 0.0, "force_geometry": geo})
+            part = os.path.join(tmp, f"p{k}.mp4")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", seg, "-filter_complex", _filter_graph(plan),
+                            "-map", "[v]", "-an", *_encode_args(), part], check=True)
+            parts.append(part)
+            plans.append({"start": a, "end": b, **plan})
+        lst = os.path.join(tmp, "list.txt")
+        with open(lst, "w") as f:
+            for p in parts:
+                f.write(f"file '{p.replace(os.sep, '/')}'\n")
+        joined = os.path.join(tmp, "joined.mp4")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst,
+                        "-c", "copy", joined], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", joined, "-i", clip_path, "-map", "0:v",
+                        "-map", "1:a?", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+                        "-movflags", "+faststart", out_path], check=True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return plans
+
+
 def render(clip_path, out_path, analysis, cfg):
     """Renderiza el clip con el layout gaming y escribe el sidecar de layout
     (para que los subtítulos vayan en la costura) y un JSON de debug."""
+    tl = cam_timeline(clip_path, analysis, cfg) if cfg.get("cam_follow_changes", True) else []
+    if tl:
+        # La cam cambia de sitio/tamaño durante el clip: un tramo por posición.
+        plans = _render_segments(clip_path, out_path, analysis, cfg, tl)
+        import layout_ranges
+        layout_ranges.write(out_path, [(p["start"], p["end"], "split") for p in plans])
+        plan = {"mode": "cam_top", "cam_present": 1.0, "cam_timeline": tl, "segments": plans,
+                **{k: plans[0][k] for k in ("game_rect", "game_crop", "cam_crop", "cam_y", "cam_h",
+                                            "game_y", "game_h", "fill")}}
+        with open(out_path + ".gaming.json", "w", encoding="utf-8") as f:
+            json.dump(plan, f, indent=2)
+        if cfg.get("debug_video", True):
+            debug_video(clip_path, out_path + ".debug.mp4", plan, analysis)
+        return plan
     plan = plan_clip(clip_path, analysis, cfg)
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", clip_path,
            "-filter_complex", _filter_graph(plan), "-map", "[v]", "-map", "0:a?",

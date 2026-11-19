@@ -340,10 +340,28 @@ def pick_cam(frames, face_lists, clusters, W, H, cfg, min_sides=None):
         if face[2] / max(1, w) < cfg.get("min_face_to_cam_width", 0.2):
             cand["rejected"] = "cara demasiado pequeña para su marco"
             continue
+        fcx, fcy = face[0] + face[2] / 2, face[1] + face[3] / 2
+        if not (x <= fcx <= x + w and y <= fcy <= y + h):
+            cand["rejected"] = "la cara queda fuera de su marco"
+            continue
         if sides >= need and area <= cfg.get("max_cam_area", 0.35)                 and face[2] / rect[2] <= cfg.get("max_face_to_cam_width", 0.6):
             return ({"rect": list(rect), "face": cand["face"], "area_frac": cand["area_frac"],
                      "hit_ratio": cand["hit_ratio"], "frame_index": int(idx[len(idx) // 2])}, cands)
     return None, cands
+
+
+def person_heads(frame, cfg):
+    """Cabezas (x, y, w, h, score) de las personas que ve YOLO, incluidas las
+    cortadas por el borde (una webcam pegada abajo corta el cuerpo)."""
+    from .podcast_render import _yolo
+    H, W = frame.shape[:2]
+    r = _yolo()(frame, classes=[0], conf=cfg.get("person_min_conf", 0.35), verbose=False)[0]
+    heads = []
+    for (x1, y1, x2, y2), conf in zip(r.boxes.xyxy.tolist(), r.boxes.conf.tolist()):
+        w, h = x2 - x1, y2 - y1
+        hh = min(0.45 * h, 0.75 * w)  # cabeza: parte de arriba de la caja
+        heads.append((x1 + w / 2 - hh * 0.4, y1, hh * 0.8, hh, float(conf)))
+    return heads
 
 
 def scene_cam(frames, cfg):
@@ -376,6 +394,23 @@ def analyze(video_path, cfg=None, n_frames=None):
               "face_hit_ratio": round(clusters[0][1], 3) if clusters else 0.0, "webcam": None,
               "faces_per_frame": [len(fl) for fl in face_lists], "cam_candidates": []}
     webcam_info, cands = pick_cam(frames, face_lists, clusters, W, H, cfg)
+    if webcam_info is None and cfg.get("cam_person_fallback", True):
+        # Plan B: cabezas de personas (YOLO) en vez de caras. Con luz lateral o
+        # la cara en diagonal, MediaPipe solo veía a ElMillor en 1 de cada 5
+        # frames; YOLO lo encontraba en 54 de 60.
+        head_lists = [person_heads(fr, cfg) for _, fr in frames]
+        hclusters = _vote_clusters(head_lists, W, cfg.get("max_cam_face_frac", 0.12))
+        # Más exigente que con caras: la persona debe verse en >=35% del vídeo
+        # (ElMillor: 73%; una "cam" falsa de público en un plató: 18%).
+        min_hits = max(cfg.get("min_cam_hits", 5),
+                       int(cfg.get("person_min_hit_ratio", 0.35) * len(frames)))
+        webcam_info, hcands = pick_cam(frames, head_lists, hclusters, W, H,
+                                       {**cfg, "min_cam_hits": min_hits})
+        for c in hcands:
+            c["via"] = "personas (YOLO)"
+        cands += hcands
+        if webcam_info:
+            webcam_info["via"] = "personas (YOLO)"
     result["cam_candidates"] = cands
     result["webcam"] = webcam_info
     cam_rect = tuple(webcam_info["rect"]) if webcam_info else None
@@ -433,12 +468,23 @@ def save_template(frame, rect, path):
     cv2.imwrite(path, frame[y:y + h, x:x + w])
 
 
-def find_by_template(frame, template, scale=TEMPLATE_SCALE):
-    """(x, y, score) de donde mejor encaja la imagen de la cam en el frame."""
+def find_by_template(frame, template, scale=TEMPLATE_SCALE,
+                     sizes=(1.0, 0.8, 1.25, 1.5, 1.75)):
+    """(x, y, score, tamaño) de donde mejor encaja la imagen de la cam.
+
+    Se prueba a varios tamaños: ElMillor usaba una escena "ampliada" con la cam
+    1,5 veces más grande y a un solo tamaño la búsqueda fallaba (0,44, y en
+    otro sitio). ``tamaño`` es el factor respecto a la cam original."""
     small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    tpl = cv2.resize(template, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    if tpl.shape[0] >= small.shape[0] or tpl.shape[1] >= small.shape[1]:
-        return None
-    res = cv2.matchTemplate(small, tpl, cv2.TM_CCOEFF_NORMED)
-    _, score, _, loc = cv2.minMaxLoc(res)
-    return int(loc[0] / scale), int(loc[1] / scale), float(score)
+    best = None
+    for k in sizes:
+        tpl = cv2.resize(template, None, fx=scale * k, fy=scale * k, interpolation=cv2.INTER_AREA)
+        if tpl.shape[0] < 8 or tpl.shape[0] >= small.shape[0] or tpl.shape[1] >= small.shape[1]:
+            continue
+        res = cv2.matchTemplate(small, tpl, cv2.TM_CCOEFF_NORMED)
+        _, score, _, loc = cv2.minMaxLoc(res)
+        # Pequeña preferencia por el tamaño original ante empates.
+        adj = score - (0.0 if k == 1.0 else 0.02)
+        if best is None or adj > best[4]:
+            best = (int(loc[0] / scale), int(loc[1] / scale), float(score), k, adj)
+    return best[:4] if best else None
