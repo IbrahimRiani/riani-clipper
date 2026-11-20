@@ -56,7 +56,7 @@ def base_config():
         return yaml.safe_load(f)
 
 
-def write_config(font, emojis, lang, min_s, max_s, layout_mode):
+def write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view="full"):
     """Copia de config.yaml con lo elegido en la interfaz (config.yaml no se toca)."""
     cfg = copy.deepcopy(base_config())
     cfg.setdefault("captions", {}).setdefault("overrides", {})["font_name"] = font
@@ -64,6 +64,7 @@ def write_config(font, emojis, lang, min_s, max_s, layout_mode):
     cfg.setdefault("transcription", {})["language"] = lang
     cfg.setdefault("clips", {}).update({"min_seconds": int(min_s), "max_seconds": int(max_s)})
     cfg.setdefault("layout", {})["mode"] = layout_mode
+    cfg["layout"]["game_view"] = game_view
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, ".app_config.yaml")
     with open(path, "w", encoding="utf-8") as f:
@@ -138,7 +139,7 @@ def clips_of(out_dir):
     return items
 
 
-def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s, max_s):
+def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s, max_s, game_view="full"):
     jobs = [(f if isinstance(f, str) else f.name, False) for f in (files or [])]
     jobs += [(u.strip(), True) for u in (urls or "").splitlines() if u.strip().startswith("http")]
     if not jobs:
@@ -147,7 +148,7 @@ def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s,
     if not os.environ.get("DEEPSEEK_API_KEY") and not os.path.exists(os.path.join(ROOT, ".env")):
         yield "Falta la clave de DeepSeek: crea el archivo .env (ver README).", [], []
         return
-    cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode)
+    cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view)
     all_clips, files_out, lines = [], [], []
     for k, (src, is_url) in enumerate(jobs, start=1):
         state = {"log": [], "frac": 0.0, "out": None}
@@ -228,6 +229,9 @@ def build():
                     layout_mode = gr.Dropdown(["auto", "gaming", "chatting", "podcast"], value="auto",
                                               label="Tipo de vídeo",
                                               info="auto lo detecta solo (webcam + juego, charla, podcast)")
+                    game_view = gr.Radio([("Pantalla entera", "full"), ("Recortada al centro", "crop")],
+                                         value=cfg.get("layout", {}).get("game_view", "full"),
+                                         label="Juego / contenido (debajo de la webcam)")
                     font = gr.Dropdown(font_list, value=cur_font if cur_font in font_list else None,
                                        label="Fuente de los subtítulos")
                     emojis = gr.Checkbox(value=cfg.get("emojis", {}).get("enabled", True), label="Emojis")
@@ -245,7 +249,7 @@ def build():
             status = gr.Textbox(label="Progreso", lines=12, interactive=False)
             gallery = gr.Gallery(label="Clips", columns=4, height="auto", object_fit="contain")
             downloads = gr.File(label="Descargar", file_count="multiple", interactive=False)
-            opts = [layout_mode, font, emojis, lang, min_s, max_s]
+            opts = [layout_mode, font, emojis, lang, min_s, max_s, game_view]
             go.click(process, [files, urls, start, minutes] + opts, [status, gallery, downloads])
             inbox.click(process_inbox, opts, [status, gallery, downloads])
         with gr.Tab("Mis clips") as mis_clips:

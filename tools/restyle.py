@@ -26,6 +26,7 @@ def main():
     p.add_argument("--relayout", action="store_true",
                    help="Volver a cortar y reencuadrar (layout gaming) desde el vídeo original.")
     p.add_argument("--config", default=os.path.join(ROOT, "config.yaml"))
+    p.add_argument("--only", help="Solo estos clips, p. ej. 4 o 1,3 (por defecto, todos).")
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -80,7 +81,10 @@ def main():
         chosen, why = lay.decide(analysis, lcfg.get("mode", "auto"), lcfg)
         print(f"🧩 Layout: {chosen} — {why}")
 
+    only = {int(x) for x in args.only.split(",")} if args.only else None
     for i, clip in enumerate(meta["shorts"], start=1):
+        if only and i not in only:
+            continue
         raw = os.path.join(debug, f"{base}_clip_{i}.mp4")
         if source:
             tmp = os.path.join(debug, f"_tmp_cut_{i}.mp4")

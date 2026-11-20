@@ -192,10 +192,17 @@ def plan_clip(clip_path, analysis, cfg):
         inner = _inset(cam_rect, W, H, cfg.get("cam_inset_frac", 0.025))
         plan["cam_crop"] = list(_crop_to_aspect(inner, OUT_W / geo["cam_h"], face_c))
     # El juego de ESTE clip (sin barras negras) se recorta a la forma del panel.
+    full = cfg.get("game_view", "full") == "full"
+    if full:
+        # Zoom fijo al CENTRO de la pantalla: sin seguir la acción, sin
+        # movimientos de cámara (preferencia del usuario).
+        center = (game[0] + game[2] / 2, game[1] + game[3] / 2)
     crop = _crop_to_aspect(game, OUT_W / geo["game_h"], center)
-    crop = _avoid_cam(crop, game, cam_rect if plan["mode"] == "cam_top" else None)
+    if not full:
+        crop = _avoid_cam(crop, game, cam_rect if plan["mode"] == "cam_top" else None)
     plan["game_crop"] = list(crop)
-    if plan["mode"] == "cam_top" and cam_rect and _overlap(crop, cam_rect):
+    plan["game_view"] = "full" if full else "crop"
+    if not full and plan["mode"] == "cam_top" and cam_rect and _overlap(crop, cam_rect):
         # No se pudo esquivar (cam muy grande): se difumina dentro del juego
         # para que no salga dos veces.
         ix0, iy0 = max(crop[0], cam_rect[0]), max(crop[1], cam_rect[1])
@@ -215,9 +222,21 @@ def video_geometry(analysis, cfg, with_cam=True):
     gx, gy, gw, gh = analysis["game"]["rect"]
     ga = gw / gh
     cam = analysis.get("webcam") if with_cam else None
+    if cam and cfg.get("game_view", "full") == "full" and cfg.get("full_cam_frac"):
+        # Reparto fijo de la pantalla (por defecto 50/50): webcam arriba y
+        # juego abajo llenando su mitad, con zoom fijo al centro. Sin franjas.
+        cam_h = _even(cfg["full_cam_frac"] * OUT_H)
+        return {"cam_y": 0, "cam_h": cam_h, "game_y": cam_h, "game_h": OUT_H - cam_h}
     cam_h = cam_panel_height(cam["rect"], cfg) if cam else 0
     avail = OUT_H - cam_h
-    if ga <= cfg.get("game_fit_max_aspect", 1.6):
+    full = cfg.get("game_view", "full") == "full"
+    if full:
+        # Pantalla de juego ENTERA a lo ancho (aunque la cam se vea también
+        # dentro): preferencia del usuario frente a recortar el centro.
+        # Con un zoom suave: se pierde un poco por los lados (game_full_keep,
+        # 85 % del ancho), toda la altura, y el juego gana algo de alto.
+        crop_aspect = max(OUT_W / avail, ga * cfg.get("game_full_keep", 0.85))
+    elif ga <= cfg.get("game_fit_max_aspect", 1.6):
         # Juego "cuadradote" (retro, 4:3): casi entero, como mucho pierde
         # game_fit_keep por los lados (los HUD suelen estar dentro).
         crop_aspect = max(OUT_W / avail, ga * cfg.get("game_fit_keep", 0.9))
@@ -229,7 +248,8 @@ def video_geometry(analysis, cfg, with_cam=True):
     spare = OUT_H - cam_h - game_h
     if cam and spare > 0:
         # Lo que sobra, primero a la webcam (hasta cam_grow_max_frac)...
-        grow = min(spare, _even(cfg.get("cam_grow_max_frac", 0.42) * OUT_H) - cam_h)
+        max_frac = cfg.get("cam_grow_max_frac_full", 0.5) if full else cfg.get("cam_grow_max_frac", 0.42)
+        grow = min(spare, _even(max_frac * OUT_H) - cam_h)
         if grow > 0:
             cam_h += _even(grow)
             spare = OUT_H - cam_h - game_h
