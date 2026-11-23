@@ -40,6 +40,24 @@ def _face_box_out(raw, debug_dir):
             fw * (1 + 2 * m) * s, fh * (1 + 2 * m) * s)
 
 
+def clip_overlay_items(emoji_items, transcript, clip, lol_index, lol_cfg):
+    """Emojis del clip + iconos del LoL mencionados (que sustituyen al emoji cercano)."""
+    if not lol_index:
+        return emoji_items
+    from . import lol
+    icons = lol.mentions(transcript, clip["start"], clip["end"], lol_index, lol_cfg)
+    if icons:
+        print(f"   🎮 Iconos LoL: " + ", ".join(f"{m['name']} ({m['t']:.0f}s)" for m in icons))
+    # El sonido elegido para un emoji se conserva aunque el icono lo sustituya.
+    merged = lol.merge_with_emojis(emoji_items, icons)
+    for m in merged:
+        if m.get("png") and not m.get("s"):
+            near = [e for e in emoji_items if e.get("s") and abs(e["t"] - m["t"]) <= 1.5]
+            if near:
+                m["s"] = near[0]["s"]
+    return merged
+
+
 def place_items(raw, items, cfg, debug_dir=None):
     """Copia de ``items`` con "x"/"y" de cada emoji según la escena en su segundo."""
     out = []
@@ -112,6 +130,14 @@ def organize(out_dir, cfg=None):
         except Exception as e:
             print(f"   ⚠️ Emojis omitidos ({type(e).__name__}: {e}).")
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    lol_cfg = cfg.get("lol_icons", {})
+    lol_index = None
+    if lol_cfg.get("enabled", False):
+        try:
+            from . import lol
+            lol_index = lol.load()
+        except Exception as e:
+            print(f"   ⚠️ Iconos del LoL omitidos ({type(e).__name__}: {e}).")
 
     summary = []
     for i, clip in enumerate(meta.get("shorts", []), start=1):
@@ -120,6 +146,10 @@ def organize(out_dir, cfg=None):
         subbed = glob.glob(os.path.join(out_dir, f"subtitled_*_{base}_clip_{i}.mp4"))
         raw = os.path.join(out_dir, f"{base}_clip_{i}.mp4")
         done = False
+        overlay_items = clip_overlay_items(emoji_plan.get(i, []), meta["transcript"], clip,
+                                           lol_index, lol_cfg)
+        if overlay_items:
+            emoji_plan[i] = overlay_items
         if subbed and emoji_plan.get(i):
             try:
                 from . import emojis

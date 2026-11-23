@@ -23,6 +23,13 @@ def decide(analysis, forced, cfg):
     cam = analysis.get("webcam")
     face_frac = analysis.get("median_largest_face_frac", 0)
     motion = analysis.get("scene_motion", 0)
+    big = analysis.get("big_face_ratio", 0)
+    if cam and big >= cfg.get("mixed_min_big_face_ratio", 0.15):
+        # Directo que mezcla partida (cam pequeña) y escenas de cámara a
+        # pantalla completa: el layout gaming ponía la "cam" sobre una escena
+        # de cara grande. Escena a escena se resuelve cada una bien.
+        return "chatting", (f"webcam pequeña (en el {cam.get('hit_ratio', 0):.0%} del vídeo) y "
+                            f"escenas de cámara completa ({big:.0%}): escena a escena")
     if cam and cam["area_frac"] <= cfg.get("gaming_max_cam_area", 0.3) \
             and cam.get("hit_ratio", 1) >= cfg.get("gaming_min_cam_ratio", 0.6) \
             and motion >= cfg.get("gaming_min_scene_motion", 15):

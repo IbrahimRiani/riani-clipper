@@ -140,7 +140,9 @@ def _classify(frames, analysis, cfg):
         if rect:
             if _iou(rect, cam["rect"]) > 0.5:
                 return "cam_top", analysis
-            moved = {**cam, "rect": rect, "face": _scale_face(cam, rect)}
+            # Sin "template": la posición ya está decidida para esta escena y el
+            # render no debe volver a buscarla (antes la devolvía a su sitio).
+            moved = {**cam, "rect": rect, "face": _scale_face(cam, rect), "template": None}
             return "cam_top", {**analysis, "webcam": moved}
     in_cam = border = big = 0
     small_elsewhere = 0

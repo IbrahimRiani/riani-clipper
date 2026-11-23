@@ -148,6 +148,15 @@ Probado con 90 min de un directo de Twitch (1080p60): ~19 min en total en una RT
 (transcripción ~5 min, análisis de pantallas de espera ~1 min, DeepSeek ~1 min, 10 clips ~6 min).
 Si el streamer mueve la webcam a mitad de directo, se encuentra en su nueva posición.
 
+## Iconos del LoL y sonidos meme
+
+- **Iconos del LoL**: al mencionar un objeto grande o un hechizo de invocador ("rabadon",
+  "black cleaver", "flash", "smite", "tp"…) aparece su icono oficial en vez del emoji. Los
+  iconos son de Riot (Data Dragon) y se descargan solos a `assets/lol/`.
+- **Sonidos meme**: pon tus archivos en `assets/sfx/` (vine boom, faaah, rizz; ver
+  `LEEME.txt`). DeepSeek elige como mucho 2 por clip en los momentos que encajan (remate,
+  fail, ligoteo). No se suben a GitHub.
+
 ## Configuración
 
 Todo lo ajustable está en [config.yaml](config.yaml): modelo de DeepSeek, modelo de

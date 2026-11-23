@@ -60,6 +60,11 @@ def main():
         else:
             plan = {i: c.get("emojis", []) for i, c in enumerate(summary["clips"], start=1)}
 
+    lol_index = None
+    if cfg.get("lol_icons", {}).get("enabled", False):
+        from clipper_lib import lol
+        lol_index = lol.load()
+
     import layout_ranges
     import main as osmain  # funciones de OpenShorts (auto_caption_clip)
     from clipper_lib import emojis, organize
@@ -106,6 +111,10 @@ def main():
         captioned = osmain.auto_caption_clip(raw, meta["transcript"], clip["start"], clip["end"],
                                              split_ranges=splits)
         src = captioned or raw
+        clip_items = organize.clip_overlay_items(plan.get(i, []), meta["transcript"], clip,
+                                                 lol_index, cfg.get("lol_icons", {}))
+        if clip_items:
+            plan[i] = clip_items
         if plan.get(i):
             items = organize.place_items(raw, plan[i], emoji_cfg, debug)
             emojis.overlay(src, final, items, os.path.join(ROOT, "assets", "emoji"), None, emoji_cfg)

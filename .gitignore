@@ -22,3 +22,6 @@ vendor/openshorts/fonts/RubikMonoOne-Regular.ttf
 vendor/openshorts/fonts/RussoOne-Regular.ttf
 vendor/openshorts/fonts/SigmarOne-Regular.ttf
 vendor/openshorts/fonts/TitanOne-Regular.ttf
+assets/lol/
+assets/sfx/*
+!assets/sfx/LEEME.txt

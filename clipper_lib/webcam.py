@@ -337,7 +337,14 @@ def pick_cam(frames, face_lists, clusters, W, H, cfg, min_sides=None):
         # En una webcam se ve cabeza y hombros: la cara ocupa el 26-37 % de su
         # ancho (medido en 4 streams). Una persona pequeña en un plano general
         # de plató ocupaba el 16 % de su "marco".
-        if face[2] / max(1, w) < cfg.get("min_face_to_cam_width", 0.2):
+        # Con YOLO la "cara" es una estimación de la cabeza (más pequeña que la
+        # caja de MediaPipe): umbral más bajo. Medido: 0,195 y 0,206 en dos
+        # directos de ElMillor con la cam bien detectada.
+        if cfg.get("_via_person"):
+            min_ratio = cfg.get("min_face_to_cam_width_person", 0.12)
+        else:
+            min_ratio = cfg.get("min_face_to_cam_width", 0.2)
+        if face[2] / max(1, w) < min_ratio:
             cand["rejected"] = "cara demasiado pequeña para su marco"
             continue
         fcx, fcy = face[0] + face[2] / 2, face[1] + face[3] / 2
@@ -402,10 +409,14 @@ def analyze(video_path, cfg=None, n_frames=None):
         hclusters = _vote_clusters(head_lists, W, cfg.get("max_cam_face_frac", 0.12))
         # Más exigente que con caras: la persona debe verse en >=35% del vídeo
         # (ElMillor: 73%; una "cam" falsa de público en un plató: 18%).
+        # Más exigente que con caras. Medido: cams reales de ElMillor en el
+        # 73-75 % del vídeo y 4,5 % de la pantalla; la "cam" falsa de un plató,
+        # 37 % y 22 %.
         min_hits = max(cfg.get("min_cam_hits", 5),
-                       int(cfg.get("person_min_hit_ratio", 0.35) * len(frames)))
+                       int(cfg.get("person_min_hit_ratio", 0.5) * len(frames)))
         webcam_info, hcands = pick_cam(frames, head_lists, hclusters, W, H,
-                                       {**cfg, "min_cam_hits": min_hits})
+                                       {**cfg, "min_cam_hits": min_hits, "_via_person": True,
+                                        "max_cam_area": cfg.get("person_max_cam_area", 0.12)})
         for c in hcands:
             c["via"] = "personas (YOLO)"
         cands += hcands
@@ -424,6 +435,13 @@ def analyze(video_path, cfg=None, n_frames=None):
     result["scene_motion"] = round(float(std[mask].mean()), 2)
     big_faces = [max((f[2] for f in fl), default=0) / W for fl in face_lists]
     result["median_largest_face_frac"] = round(float(np.median(big_faces)), 3)
+    # Parte del vídeo con una cara GRANDE (escenas de cámara a pantalla completa).
+    # Solo cuenta si las caras grandes salen casi siempre en el MISMO sitio
+    # (el streamer en su escena de cámara completa); los personajes de las
+    # cinemáticas de un juego salen cada vez en un sitio distinto.
+    big_lists = [[f for f in fl if f[2] >= cfg.get("big_face_frac", 0.1) * W] for fl in face_lists]
+    bc = _vote_clusters(big_lists, W, 1.0, top=1)
+    result["big_face_ratio"] = round(bc[0][1], 3) if bc else 0.0
     return result, frames
 
 
@@ -469,7 +487,7 @@ def save_template(frame, rect, path):
 
 
 def find_by_template(frame, template, scale=TEMPLATE_SCALE,
-                     sizes=(1.0, 0.8, 1.25, 1.5, 1.75)):
+                     sizes=(1.0, 0.8, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0)):
     """(x, y, score, tamaño) de donde mejor encaja la imagen de la cam.
 
     Se prueba a varios tamaños: ElMillor usaba una escena "ampliada" con la cam

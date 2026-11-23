@@ -49,7 +49,11 @@ layout:
   cam_min_aspect: 0.9         # y ser apaisada (ancho/alto >= 0,9)
   min_face_to_cam_width: 0.2  # y la cara ocupar >= 20% de su ancho (cabeza y hombros)
   cam_person_fallback: true   # si no se ven caras claras, buscar la cam con el detector de personas (YOLO)
-  person_min_hit_ratio: 0.35  # ...y exigir que esa persona salga en >=35% del vídeo
+  person_min_hit_ratio: 0.5   # ...y exigir que esa persona salga en >=50% del vídeo
+  person_max_cam_area: 0.12   # ...y que esa cam ocupe como mucho el 12% de la pantalla
+  min_face_to_cam_width_person: 0.12  # con YOLO la cabeza estimada es más pequeña que una cara: umbral más bajo
+  big_face_frac: 0.1          # "cara grande" (cámara a pantalla completa): >=10% del ancho
+  mixed_min_big_face_ratio: 0.15  # webcam + >=15% de escenas de cámara completa -> escena a escena
   cam_follow_changes: true    # si la cam se mueve o se agranda (zoom) dentro de un clip, seguirla por tramos
   cam_change_min_seconds: 2.0 # cambios más cortos que esto se ignoran
   edge_min_score: 0.5         # continuidad del marco + salto quieto/movimiento
@@ -144,3 +148,15 @@ emojis:
   duration: 1.4             # segundos en pantalla
   gap_above_caption: 56     # distancia del centro del subtítulo al borde de abajo del emoji
   face_overlap_max: 1.0     # 1.0 = siempre centrado encima del texto (aunque tape la boca)
+  # --- sonidos meme (pon tus archivos en assets/sfx/: boom.mp3, faah.mp3, rizz.mp3) ---
+  sfx_enabled: true
+  max_sfx_per_clip: 2       # DeepSeek elige como mucho 2 por clip
+  sfx_volume: 0.8
+  icon_scale: 0.8           # tamaño de los iconos del LoL respecto a un emoji
+
+lol_icons:
+  # Iconos oficiales de Riot (Data Dragon) al mencionar objetos grandes o hechizos de
+  # invocador; sustituyen al emoji en ese momento. Se descargan a assets/lol/.
+  enabled: true
+  max_per_clip: 4
+  min_gap: 3                # segundos mínimos entre dos iconos
