@@ -143,6 +143,12 @@ lado. Resultado: persona arriba (recortada alrededor de la cara) y contenido aba
 con los subtítulos en la costura. Si un clip concreto no tiene la pantalla partida, se hace
 escena a escena como en chatting. Para forzarlo: `--layout split`.
 
+También cubre **dos cámaras lado a lado** (videochats tipo Omegle/Umingle, debates a dos
+cámaras): dos caras, una a cada lado, con una línea entre ellas a la altura de las caras.
+La de la izquierda va arriba y la de la derecha abajo, cada una recortada en su cara y sin
+el navegador ni los botones de alrededor (se detecta el borde de arriba y de abajo de cada
+cámara).
+
 ## Pantallas de espera / BRB / intro
 
 Antes de elegir clips se marcan los tramos "muertos": al menos 20 s sin voz (o solo frases que

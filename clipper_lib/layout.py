@@ -22,6 +22,9 @@ def decide(analysis, forced, cfg):
         return forced, "forzado con --layout"
     sp = analysis.get("split_screen")
     if sp:
+        if sp.get("kind") == "dual":
+            return "split", (f"pantalla partida con una persona a cada lado ({sp['ratio']:.0%} del vídeo): "
+                             "la de la izquierda arriba y la de la derecha abajo")
         return "split", (f"pantalla partida: persona a la {'izquierda' if sp['side'] == 'left' else 'derecha'}"
                          f" ({sp['ratio']:.0%} del vídeo): persona arriba, contenido abajo")
     cam = analysis.get("webcam")
