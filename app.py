@@ -57,10 +57,13 @@ def base_config():
 
 
 def write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view="full",
-                 lol_icons=True, sfx=True):
+                 lol_icons=True, sfx=True, color=None):
     """Copia de config.yaml con lo elegido en la interfaz (config.yaml no se toca)."""
     cfg = copy.deepcopy(base_config())
     cfg.setdefault("captions", {}).setdefault("overrides", {})["font_name"] = font
+    if color:
+        cfg["captions"]["overrides"]["font_color"] = _hex(color)
+        cfg["captions"]["overrides"]["highlight_color"] = _hex(color)
     cfg.setdefault("emojis", {})["enabled"] = bool(emojis)
     cfg["emojis"]["sfx_enabled"] = bool(sfx)
     cfg.setdefault("lol_icons", {})["enabled"] = bool(lol_icons)
@@ -73,6 +76,69 @@ def write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view="full"
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, allow_unicode=True, sort_keys=False)
     return path
+
+
+def _hex(color):
+    """'#ffc93c' o 'rgba(255, 201, 60, 1)' (según la versión de Gradio) -> '#FFC93C'."""
+    c = str(color or "").strip()
+    m = re.match(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)", c)
+    if m:
+        return "#" + "".join(f"{round(float(v)):02X}" for v in m.groups())
+    c = c.lstrip("#")
+    return "#" + c[:6].upper() if re.fullmatch(r"[0-9a-fA-F]{6,8}", c) else "#FFFFFF"
+
+
+def _preview_background():
+    """Un fotograma de un clip ya hecho (sin subtítulos) como fondo; si no hay
+    ninguno, un degradado oscuro."""
+    bg = os.path.join(OUT, ".preview_bg.png")
+    if os.path.exists(bg):
+        return bg
+    os.makedirs(OUT, exist_ok=True)
+    raws = sorted(glob.glob(os.path.join(OUT, "*", "debug", "*_clip_1.mp4")), key=os.path.getmtime)
+    cmd = (["ffmpeg", "-v", "error", "-y", "-ss", "8", "-i", raws[-1]] if raws else
+           ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "gradients=s=1080x1920:c0=0x202638:c1=0x4a3a5a"])
+    subprocess.run(cmd + ["-frames:v", "1", "-vf", "scale=1080:1920", bg], check=False)
+    return bg
+
+
+def caption_preview(font, color, word="BRUTAL"):
+    """Imagen 1080x1920 (reducida) con una palabra en la fuente y el color
+    elegidos, quemada con libass igual que los subtítulos de verdad."""
+    cfg = base_config()
+    ov = (cfg.get("captions") or {}).get("overrides") or {}
+    size = ov.get("font_size", 25)
+    border = ov.get("border_width", 3)
+    h = _hex(color).lstrip("#")
+    ass_col = f"&H00{h[4:6]}{h[2:4]}{h[0:2]}"
+    fonts_dir = os.path.join(ROOT, "vendor", "openshorts", "fonts")
+    for f in glob.glob(os.path.join(ROOT, "assets", "fonts", "*.ttf")):
+        if not os.path.exists(os.path.join(fonts_dir, os.path.basename(f))):
+            shutil.copy2(f, fonts_dir)
+    word = (word or "BRUTAL").strip().upper()[:20] or "BRUTAL"
+    ass = ("[Script Info]\nScriptType: v4.00+\nPlayResY: 288\nScaledBorderAndShadow: yes\n\n"
+           "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+           "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, "
+           "Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+           f"Style: Default,{font},{size},{ass_col},{ass_col},&H00000000,&HFF000000,1,0,0,0,100,100,0,0,1,"
+           f"{border},0,2,10,10,43,1\n\n"
+           "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+           f"Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,{{\\an5\\pos(192,157.5)\\fscx108\\fscy108}}{word}\n")
+    tmp = os.path.join(OUT, ".preview")
+    os.makedirs(tmp, exist_ok=True)
+    with open(os.path.join(tmp, "p.ass"), "w", encoding="utf-8") as f:
+        f.write(ass)
+    out = os.path.join(tmp, f"preview_{int(time.time() * 1000)}.png")
+    for old in glob.glob(os.path.join(tmp, "preview_*.png")):
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+    # Rutas relativas: el filtro ass de ffmpeg se lía con "C:" y los espacios.
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", os.path.relpath(_preview_background(), tmp),
+                    "-vf", "ass=p.ass:fontsdir=" + os.path.relpath(fonts_dir, tmp).replace("\\", "/") +
+                    ",scale=405:720", "-frames:v", "1", os.path.basename(out)], cwd=tmp, check=False)
+    return out if os.path.exists(out) else None
 
 
 def _slug(text):
@@ -143,7 +209,7 @@ def clips_of(out_dir):
 
 
 def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s, max_s,
-            game_view="full", lol_icons=True, sfx=True):
+            game_view="full", lol_icons=True, sfx=True, color=None):
     jobs = [(f if isinstance(f, str) else f.name, False) for f in (files or [])]
     jobs += [(u.strip(), True) for u in (urls or "").splitlines() if u.strip().startswith("http")]
     if not jobs:
@@ -152,7 +218,7 @@ def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s,
     if not os.environ.get("DEEPSEEK_API_KEY") and not os.path.exists(os.path.join(ROOT, ".env")):
         yield "Falta la clave de DeepSeek: crea el archivo .env (ver README).", [], []
         return
-    cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view, lol_icons, sfx)
+    cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view, lol_icons, sfx, color)
     all_clips, files_out, lines = [], [], []
     for k, (src, is_url) in enumerate(jobs, start=1):
         state = {"log": [], "frac": 0.0, "out": None}
@@ -237,8 +303,18 @@ def build():
                     game_view = gr.Radio([("Pantalla entera", "full"), ("Recortada al centro", "crop")],
                                          value=cfg.get("layout", {}).get("game_view", "full"),
                                          label="Juego / contenido (debajo de la webcam)")
-                    font = gr.Dropdown(font_list, value=cur_font if cur_font in font_list else None,
-                                       label="Fuente de los subtítulos")
+                    cur_color = (cfg.get("captions", {}).get("overrides") or {}).get("font_color", "#FFFFFF")
+                    with gr.Row():
+                        with gr.Column(scale=3, min_width=160):
+                            font = gr.Dropdown(font_list, value=cur_font if cur_font in font_list else None,
+                                               label="Fuente de los subtítulos")
+                            color = gr.ColorPicker(value=cur_color, label="Color de la letra")
+                            sample = gr.Textbox(value="BRUTAL", label="Palabra de prueba", max_lines=1)
+                        preview = gr.Image(value=caption_preview(cur_font, cur_color), label="Vista previa",
+                                           show_label=True, interactive=False, height=360,
+                                           show_download_button=False, scale=2, min_width=150)
+                    for ctl in (font, color, sample):
+                        ctl.change(caption_preview, [font, color, sample], preview)
                     with gr.Row():
                         emojis = gr.Checkbox(value=cfg.get("emojis", {}).get("enabled", True), label="Emojis")
                         lol_icons = gr.Checkbox(value=cfg.get("lol_icons", {}).get("enabled", True),
@@ -259,7 +335,7 @@ def build():
             status = gr.Textbox(label="Progreso", lines=12, interactive=False)
             gallery = gr.Gallery(label="Clips", columns=4, height="auto", object_fit="contain")
             downloads = gr.File(label="Descargar", file_count="multiple", interactive=False)
-            opts = [layout_mode, font, emojis, lang, min_s, max_s, game_view, lol_icons, sfx]
+            opts = [layout_mode, font, emojis, lang, min_s, max_s, game_view, lol_icons, sfx, color]
             go.click(process, [files, urls, start, minutes] + opts, [status, gallery, downloads])
             inbox.click(process_inbox, opts, [status, gallery, downloads])
         with gr.Tab("Mis clips") as mis_clips:
@@ -277,5 +353,6 @@ def build():
 
 if __name__ == "__main__":
     os.makedirs(INBOX, exist_ok=True)
-    build().queue().launch(server_name="127.0.0.1", server_port=7860, inbrowser=True,
+    build().queue().launch(server_name="127.0.0.1", server_port=int(os.environ.get("CLIPPER_PORT", 7860)),
+                           inbrowser=not os.environ.get("CLIPPER_NO_BROWSER"),
                            allowed_paths=[OUT], show_api=False)

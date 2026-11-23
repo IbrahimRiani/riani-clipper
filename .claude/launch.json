@@ -6,6 +6,13 @@
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["app.py"],
       "port": 7860
+    },
+    {
+      "name": "clipper-app-test",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["app.py"],
+      "env": {"CLIPPER_PORT": "7861", "CLIPPER_NO_BROWSER": "1"},
+      "port": 7861
     }
   ]
 }
