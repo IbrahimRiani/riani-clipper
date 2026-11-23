@@ -137,9 +137,25 @@ def ensure_png(entry):
     return entry["png"]
 
 
+def is_lol_video(transcript, index, cfg=None):
+    """True si el vídeo va de LoL: varias cosas distintas del juego mencionadas
+    en todo el transcript. Evita iconos sueltos en vídeos de otra cosa (en un
+    debate de religión, "Trinity" sacaba el icono de Trinity Force)."""
+    cfg = cfg or {}
+    found = _scan(transcript, 0.0, float("inf"), index)
+    distinct = {m["id"] for m in found}
+    return len(distinct) >= cfg.get("min_video_distinct", 4) and \
+        len(found) >= cfg.get("min_video_mentions", 8)
+
+
 def mentions(transcript, start, end, index, cfg=None):
     """Menciones dentro del clip: [{"t": s, "png": ruta, "name": ..., "lol": True}]."""
     cfg = cfg or {}
+    found = _scan(transcript, start, end, index)
+    return _pick(found, cfg)
+
+
+def _scan(transcript, start, end, index):
     words = []
     for seg in transcript.get("segments", []):
         for w in seg.get("words", []):
@@ -163,6 +179,10 @@ def mentions(transcript, start, end, index, cfg=None):
             i += n
         else:
             i += 1
+    return found
+
+
+def _pick(found, cfg):
     # Sin repetir el mismo icono en <10 s, separados >=3 s, como mucho N por clip.
     out, last_t, last_seen = [], -99.0, {}
     for m in found:

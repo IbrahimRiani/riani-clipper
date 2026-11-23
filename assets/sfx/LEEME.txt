@@ -1,5 +1,10 @@
 Pon aqui tus sonidos meme (no se suben a GitHub):
-  algo con "boom" en el nombre  -> remate / sorpresa (p. ej. vine-boom.mp3)
-  algo con "faah" o "faaah"     -> fail / muerte tonta (p. ej. faaah.mp3)
-  algo con "rizz"               -> ligoteo / chica / romance (p. ej. rizz.mp3)
+  algo con "boom" en el nombre    -> remate / sorpresa (p. ej. vine-boom.mp3)
+  algo con "faah" o "faaah"       -> fail / muerte tonta (p. ej. faaah.mp3)
+  algo con "rizz"                 -> ligoteo / chica / romance (p. ej. rizz.mp3)
+  algo con "bruh"                 -> algo tonto o decepcionante (p. ej. bruh.mp3)
+  algo con "gunshot"              -> zasca / le destrozan en una discusion
+Cualquier otro sonido tambien vale: DeepSeek decide cuando usarlo por su nombre,
+asi que ponle un nombre que diga lo que es (p. ej. "risa-enlatada.mp3").
+Como mucho 2 sonidos por clip (max_sfx_per_clip en config.yaml).
 Formatos: mp3, wav, ogg, m4a.

@@ -230,9 +230,10 @@ def build():
                         start = gr.Textbox(label="Empezar en (solo URLs, opcional)", placeholder="1:30:00")
                         minutes = gr.Number(label="Minutos a bajar (solo URLs, opcional)", value=None)
                 with gr.Column(scale=2):
-                    layout_mode = gr.Dropdown(["auto", "gaming", "chatting", "podcast"], value="auto",
+                    layout_mode = gr.Dropdown([("auto", "auto"), ("gaming", "gaming"), ("chatting", "chatting"), ("podcast", "podcast"),
+                                               ("pantalla partida", "split")], value="auto",
                                               label="Tipo de vídeo",
-                                              info="auto lo detecta solo (webcam + juego, charla, podcast)")
+                                              info="auto lo detecta solo (webcam + juego, charla, podcast, pantalla partida)")
                     game_view = gr.Radio([("Pantalla entera", "full"), ("Recortada al centro", "crop")],
                                          value=cfg.get("layout", {}).get("game_view", "full"),
                                          label="Juego / contenido (debajo de la webcam)")

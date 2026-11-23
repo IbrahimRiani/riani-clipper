@@ -136,6 +136,9 @@ def organize(out_dir, cfg=None):
         try:
             from . import lol
             lol_index = lol.load()
+            if not lol.is_lol_video(meta["transcript"], lol_index, lol_cfg):
+                print("   🎮 Iconos LoL: el vídeo no va de LoL, no se ponen.")
+                lol_index = None
         except Exception as e:
             print(f"   ⚠️ Iconos del LoL omitidos ({type(e).__name__}: {e}).")
 

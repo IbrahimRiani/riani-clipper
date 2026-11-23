@@ -134,6 +134,15 @@ Se aplica escena a escena dentro del layout chatting, cuando hay **2 o más pers
 
 `podcast_mode` en `config.yaml`: `auto`, `switch` (sin split) o `split` (siempre las dos).
 
+## Layout pantalla partida
+
+Para directos con la persona en un panel lateral a toda altura y el contenido (otro directo,
+un vídeo) al lado. Se detecta por la **línea vertical** entre paneles en casi todo el alto
+(se mide frame a frame, porque el streamer la mueve) más una **cara grande** entera a un
+lado. Resultado: persona arriba (recortada alrededor de la cara) y contenido abajo, 50/50,
+con los subtítulos en la costura. Si un clip concreto no tiene la pantalla partida, se hace
+escena a escena como en chatting. Para forzarlo: `--layout split`.
+
 ## Pantallas de espera / BRB / intro
 
 Antes de elegir clips se marcan los tramos "muertos": al menos 20 s sin voz (o solo frases que

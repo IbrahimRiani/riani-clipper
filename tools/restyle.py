@@ -47,7 +47,9 @@ def main():
     if os.path.exists(det):
         from clipper_lib import gaming_render
         analysis = json.load(open(det, encoding="utf-8"))
-        if analysis.get("webcam"):
+        if analysis.get("split_screen"):
+            os.environ["CAPTION_SEAM_Y"] = f"{(960 + cfg.get('layout', {}).get('caption_offset_px', 0)) / 1920:.4f}"
+        elif analysis.get("webcam"):
             geo = gaming_render.video_geometry(analysis, cfg.get("layout", {}))
             os.environ["CAPTION_SEAM_Y"] = f"{(geo['game_y'] + cfg.get('layout', {}).get('caption_offset_px', 0)) / gaming_render.OUT_H:.4f}"
 
@@ -64,6 +66,9 @@ def main():
     if cfg.get("lol_icons", {}).get("enabled", False):
         from clipper_lib import lol
         lol_index = lol.load()
+        if not lol.is_lol_video(meta["transcript"], lol_index, cfg.get("lol_icons", {})):
+            print("   🎮 Iconos LoL: el vídeo no va de LoL, no se ponen.")
+            lol_index = None
 
     import layout_ranges
     import main as osmain  # funciones de OpenShorts (auto_caption_clip)
@@ -94,7 +99,11 @@ def main():
         if source:
             tmp = os.path.join(debug, f"_tmp_cut_{i}.mp4")
             cut_clip(source, tmp, clip["start"], clip["end"], i)
-            if chosen == "gaming":
+            if chosen == "split":
+                from clipper_lib import split_screen
+                if not split_screen.render(tmp, raw, analysis, lcfg):
+                    chatting_render.render(tmp, raw, analysis, lcfg)
+            elif chosen == "gaming":
                 gaming_render.render(tmp, raw, analysis, lcfg)
             else:
                 chatting_render.render(tmp, raw, analysis, lcfg)

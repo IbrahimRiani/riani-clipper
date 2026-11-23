@@ -191,11 +191,13 @@ def _install_hooks(cfg):
     transcribe_backends.transcribe_media = transcribe_plus
 
     from clipper_lib import sentence_snap
+    _TRANSCRIPT = []
     orig_windows = clip_selection.build_transcript_windows
 
     def windows_hook(transcript_result, *a, **k):
         # Se llama justo antes del snap de cortes: guardamos los segmentos.
         sentence_snap.set_segments(transcript_result)
+        _TRANSCRIPT[:] = [transcript_result]
         ws = orig_windows(transcript_result, *a, **k)
         if peaks_cfg.get("enabled", True):
             ws = audio_signals.annotate_windows(ws, transcript_result.get("audio_peaks"))
@@ -213,6 +215,12 @@ def _install_hooks(cfg):
     orig_dedupe = clip_selection.dedupe_overlapping
 
     def dedupe_and_drop_dead(shorts, *a, **k):
+        cuts = cfg.get("cuts", {})
+        if cuts.get("llm_refine", True) and _TRANSCRIPT and shorts:
+            from clipper_lib import boundaries
+            clips_cfg = cfg.get("clips", {})
+            boundaries.refine(shorts, _TRANSCRIPT[0], cuts, clips_cfg.get("min_seconds", 20),
+                              cuts.get("hard_max_seconds", clips_cfg.get("max_seconds", 60)))
         out = orig_dedupe(shorts, *a, **k)
         if not _DEAD:
             return out
@@ -249,7 +257,7 @@ def main():
     p.add_argument("--start", help="Solo con --url: inicio del tramo (p. ej. 1:30:00).")
     p.add_argument("--minutes", type=float,
                    help="Solo con --url: minutos a descargar desde --start.")
-    p.add_argument("--layout", default=None, choices=["auto", "gaming", "chatting", "podcast"],
+    p.add_argument("--layout", default=None, choices=["auto", "gaming", "chatting", "podcast", "split"],
                    help="Forzar layout (por defecto: el de config.yaml, normalmente auto).")
     args = p.parse_args()
 

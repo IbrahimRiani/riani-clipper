@@ -123,6 +123,9 @@ cuts:
   pause_seconds: 0.7        # una pausa así de larga también cuenta como fin de frase
   max_extend_seconds: 6     # cuánto puede alargarse el final para acabar la frase
   max_start_back_seconds: 4 # cuánto puede adelantarse el inicio para empezar la frase
+  llm_refine: true          # DeepSeek revisa dónde empieza y acaba cada idea (remate incluido)
+  context_before_seconds: 35  # transcript que ve antes del corte para buscar el inicio
+  context_after_seconds: 25   # y después, para buscar el remate
 
 captions:
   # Estilos: default, hormozi, pill, lime, oneword, cine, clean

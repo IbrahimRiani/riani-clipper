@@ -37,7 +37,26 @@ SFX_MEANING = {
     "boom": "punchline, shocking statement or dramatic reveal",
     "faah": "fail, death, big mistake or embarrassing moment",
     "rizz": "flirting, mentions of a girl/boyfriend/girlfriend or romance",
+    "bruh": "something dumb, absurd or disappointing; a facepalm moment",
+    "gunshot": "a brutal roast, a savage comeback or someone getting destroyed in an argument",
 }
+
+
+def _sfx_key(name):
+    """Clave del sonido a partir del nombre del archivo. Los conocidos se
+    reconocen por parte del nombre ("vine-boom" -> boom, "faaah" -> faah); el
+    resto usa su propio nombre y DeepSeek decide por él cuándo encaja."""
+    low = name.lower()
+    for key in SFX_MEANING:
+        if key in low:
+            return key
+    if re.search(r"fa+h", low):
+        return "faah"
+    return re.sub(r"[^a-z0-9]+", "-", low).strip("-") or None
+
+
+def sfx_meaning(key):
+    return SFX_MEANING.get(key, f'meme sound "{key}": use it only where that sound clearly fits')
 
 
 def available_sfx():
@@ -48,10 +67,7 @@ def available_sfx():
             name, ext = os.path.splitext(f)
             if ext.lower() not in (".mp3", ".wav", ".ogg", ".m4a"):
                 continue
-            # Por parte del nombre: "vine-boom.mp3" -> boom, "faaah.mp3" -> faah.
-            low = name.lower()
-            key = ("boom" if "boom" in low else "faah" if re.search(r"fa+h", low)
-                   else "rizz" if "rizz" in low else None)
+            key = _sfx_key(name)
             if key and key not in out:
                 out[key] = os.path.join(SFX_DIR, f)
     return out
@@ -85,7 +101,7 @@ def plan(meta, cfg):
     if sfx and max_sfx > 0:
         rules = (f'Also add "s" (a meme sound) to AT MOST {max_sfx} of those moments per clip, '
                  "only when it clearly fits; otherwise leave it out:\n" +
-                 "".join(f'- "{k}": {SFX_MEANING[k]}\n' for k in sfx))
+                 "".join(f'- "{k}": {sfx_meaning(k)}\n' for k in sfx))
         example = ', "s": "' + next(iter(sfx)) + '"'
     else:
         rules, example = "", ""
