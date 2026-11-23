@@ -116,7 +116,41 @@ def _cam_by_template(frames, cam, W, cfg):
         return None  # sale en sitios distintos: coincidencia casual
     k = float(np.median([m[3] for m in hits]))
     h, w = tpl.shape[:2]
-    return [int(mx), int(my), int(w * k), int(h * k)]
+    rect = [int(mx), int(my), int(w * k), int(h * k)]
+    same_place = abs(rect[0] - cam["rect"][0]) <= tol and abs(rect[1] - cam["rect"][1]) <= tol \
+        and abs(k - 1) <= 0.1
+    if not same_place and not webcam.face_fits(frames, rect, cam["face"][2] * k):
+        return None  # posición nueva sin una cara coherente dentro: coincidencia falsa
+    return rect
+
+
+def _cam_in_most_frames(frames, cam, cfg):
+    """¿Se ve la cam (por su aspecto, en cualquier sitio o tamaño, con una
+    cara o cabeza dentro) en al menos la mitad de los frames?"""
+    tpl = _template(cam)
+    thr = cfg.get("cam_template_min_score", 0.35)
+    tw, th = tpl.shape[1], tpl.shape[0]
+    n = 0
+    for f in frames:
+        m = webcam.find_by_template(f[1], tpl)
+        if m and m[2] >= thr and webcam.face_fits([f], [m[0], m[1], int(tw * m[3]), int(th * m[3])],
+                                                    cam["face"][2] * m[3]):
+            n += 1
+    return n >= max(2, len(frames) / 2)
+
+
+def _big_face_elsewhere(frames, rect, W, cfg):
+    """¿El streamer sale en GRANDE fuera de ``rect``? Una cara grande en el
+    MISMO sitio en al menos la mitad de los frames (su cam ampliada). Las caras
+    del vídeo al que reacciona saltan de un sitio a otro y no cuentan."""
+    x, y, w, h = rect
+    lists = []
+    for _, fr in frames:
+        lists.append([f for f in webcam.detect_faces(fr)
+                      if f[2] >= cfg.get("big_face_frac", 0.1) * W and
+                      not (x <= f[0] + f[2] / 2 <= x + w and y <= f[1] + f[3] / 2 <= y + h)])
+    clusters = webcam._vote_clusters(lists, W, 1.0, top=1)
+    return bool(clusters) and clusters[0][1] >= 0.5
 
 
 def _scale_face(cam, rect):
@@ -136,14 +170,28 @@ def _classify(frames, analysis, cfg):
     # 0) Buscar la cam por su aspecto: funciona aunque no se vea la cara y
     #    aunque la haya movido de sitio.
     if cam and _template(cam) is not None:
+        # Si el streamer sale en GRANDE en otra parte (escena de charla con la
+        # cam ampliada), no puede estar a la vez en la cam pequeña: el marco
+        # vacío de esa cam puntuaba 0,6, casi como una real.
+        big_elsewhere = _big_face_elsewhere(frames, cam["rect"], W, cfg)
         rect = _cam_by_template(frames, cam, W, cfg)
-        if rect:
-            if _iou(rect, cam["rect"]) > 0.5:
+        if rect and _iou(rect, cam["rect"]) > 0.5:
+            # En una reacción, la persona del vídeo puede salir en grande: ahí
+            # la cam pequeña vale si se le ve una cara de verdad dentro.
+            if not big_elsewhere or webcam.face_fits(frames, cam["rect"], cam["face"][2],
+                                                     use_heads=False):
                 return "cam_top", analysis
+            rect = None
+        if rect:
             # Sin "template": la posición ya está decidida para esta escena y el
             # render no debe volver a buscarla (antes la devolvía a su sitio).
             moved = {**cam, "rect": rect, "face": _scale_face(cam, rect), "template": None}
             return "cam_top", {**analysis, "webcam": moved}
+        if not big_elsewhere and _cam_in_most_frames(frames, cam, cfg):
+            # La cam está en casi todos los frames pero cambia de sitio o de
+            # tamaño DENTRO de la escena (zoom sin corte): cam arriba, y el
+            # render la sigue por tramos (gaming_render.cam_timeline).
+            return "cam_top", analysis
     in_cam = border = big = 0
     small_elsewhere = 0
     face_lists = []
@@ -181,7 +229,10 @@ def _classify(frames, analysis, cfg):
     if in_cam >= 1 and (in_cam + border) / n >= 0.5 and in_cam + border >= 2:
         return "cam_top", analysis
     # 3) Dos o más personas en plano -> podcast (quién habla / split).
-    if cfg.get("podcast_enabled", True) and len(podcast_render.find_speakers(frames, W, cfg)) >= 2:
+    #    Solo en vídeos SIN webcam de streamer: en un directo, la otra
+    #    "persona" suele ser contenido (una foto o un vídeo al que reacciona).
+    if cfg.get("podcast_enabled", True) and not cam \
+            and len(podcast_render.find_speakers(frames, W, cfg)) >= 2:
         return "podcast", analysis
     if big / n >= 0.6:
         return "face_track", analysis

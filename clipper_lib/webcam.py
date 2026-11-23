@@ -506,3 +506,26 @@ def find_by_template(frame, template, scale=TEMPLATE_SCALE,
         if best is None or adj > best[4]:
             best = (int(loc[0] / scale), int(loc[1] / scale), float(score), k, adj)
     return best[:4] if best else None
+
+
+def face_fits(frames, rect, expected_w, min_frames=1, tol=2.2, use_heads=True):
+    """¿Hay en algún frame una cara (o cabeza) dentro de ``rect`` con un tamaño
+    coherente con ``expected_w``? Sirve para validar una cam que la búsqueda
+    por aspecto cree haber encontrado en otro sitio o a otro tamaño: en una
+    escena de charla con la cam enorme, la coincidencia salía sobre la
+    camiseta (tamaño 0,8x) mientras la cara medía 6 veces más."""
+    x, y, w, h = rect
+    hits = 0
+
+    def inside(cands):
+        return any(x <= f[0] + f[2] / 2 <= x + w and y <= f[1] + f[3] / 2 <= y + h and
+                   expected_w / tol <= f[2] <= expected_w * tol for f in cands)
+
+    for _, fr in frames:
+        # Caras primero; si no, cabezas de personas (YOLO): con luz lateral
+        # MediaPipe no veía a ElMillor ni en su cam ampliada.
+        if inside(detect_faces(fr)) or (use_heads and inside(person_heads(fr, {}))):
+            hits += 1
+        if hits >= min_frames:
+            return True
+    return False

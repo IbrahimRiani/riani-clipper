@@ -154,7 +154,8 @@ def plan_clip(clip_path, analysis, cfg):
                 same = sum(1 for m in ms if abs(m[0] - mx) <= 0.03 * W and abs(m[1] - my) <= 0.03 * H)
                 k = float(np.median([m[3] for m in ms]))
                 moved = abs(mx - x) > 0.03 * W or abs(my - y) > 0.03 * H or abs(k - 1) > 0.1
-                if same >= max(2, 0.5 * len(sub)) and moved:
+                cand = [int(mx), int(my), int(w * k), int(h * k)]
+                if same >= max(2, 0.5 * len(sub)) and moved and                         webcam.face_fits(sub, cand, cam["face"][2] * k):
                     # Movida y/o agrandada (escena "ampliada" del streamer).
                     fx, fy, fw, fh = cam["face"][:4]
                     nw, nh = int(w * k), int(h * k)
@@ -328,6 +329,9 @@ def cam_timeline(clip_path, analysis, cfg, every=1.0):
                 rect = (x0, y0, w0, h0)
             else:
                 rect = (int(round(x / 8) * 8), int(round(y / 8) * 8), int(w0 * k), int(h0 * k))
+                # Posición/tamaño nuevos: solo si dentro hay una cara coherente.
+                if not webcam.face_fits([(0, fr)], rect, cam["face"][2] * k):
+                    rect = None
         else:
             rect = None
         labels.append((idx / fps, rect))
