@@ -265,6 +265,140 @@ def process_inbox(*opts):
         shutil.move(urls_file, os.path.join(DONE, f"urls_{time.strftime('%Y%m%d_%H%M%S')}.txt"))
 
 
+def only_download(files, urls, start, minutes, tramo, to_inbox):
+    """Solo descarga (y trocea) con tools/descargar.py, sin sacar clips."""
+    srcs = [f if isinstance(f, str) else f.name for f in (files or [])]
+    srcs += [u.strip() for u in (urls or "").splitlines() if u.strip().startswith("http")]
+    keep = (gr.update(), None, gr.update())
+    if not srcs:
+        yield ("Pega alguna URL (o arrastra un vídeo para solo trocearlo).",) + keep
+        return
+    cmd = [PY, "-u", os.path.join("tools", "descargar.py"), *srcs, "--tramo", str(float(tramo or 0))]
+    if to_inbox:
+        cmd.append("--entrada")
+    if start:
+        cmd += ["--start", str(start)]
+    if minutes:
+        cmd += ["--minutes", str(minutes)]
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+    proc = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            env=env, text=True, encoding="utf-8", errors="replace")
+    lines, last, results = [], 0.0, []  # results: [(carpeta, [archivos])] por vídeo
+    for line in proc.stdout:
+        line = line.rstrip()
+        mt = re.match(r"\s*📦 Tramo \d+ de \d+: (.+)$", line)
+        if mt:
+            results.append((None, [mt.group(1)])) if not results or results[-1][0] else \
+                results[-1][1].append(mt.group(1))
+        mf = re.match(r"📁 Tramos en (.+)$", line)
+        if mf and results and results[-1][0] is None:
+            results[-1] = (mf.group(1), results[-1][1])
+        mo = re.match(r"📁 (?:En|Copiado a) (.+?) \(no hace falta trocear\)$", line)
+        if mo:
+            results.append((os.path.dirname(mo.group(1)), [os.path.basename(mo.group(1))]))
+        m = re.search(r"\[download\]\s+([\d.]+)%", line)
+        if m:
+            # Barra de yt-dlp: una sola línea que se va actualizando.
+            txt = f"   Descargando… {float(m.group(1)):.0f}%"
+            if lines and lines[-1].startswith("   Descargando…"):
+                lines[-1] = txt
+            else:
+                lines.append(txt)
+        elif line and (line[0] in "🎬✅✂📦📁❌📥" or line.startswith("   📦")):
+            lines.append(line)
+        else:
+            continue
+        if time.time() - last > 0.5:
+            last = time.time()
+            yield ("\n".join(lines),) + keep
+    proc.wait()
+    tail = ("\n\nListo. Pulsa \"📂 Procesar la carpeta entrada/\" para sacar los clips de todos los tramos."
+            if to_inbox else "\n\nListo.")
+    # Resumen: cada tramo con su duración y tamaño, y dónde está.
+    md, paths, folder = [], [], None
+    for d, names in results:
+        if not d:
+            continue
+        folder = d
+        md.append(f"**📁 Carpeta:** `{d}`\n\n| Tramo | Duración | Tamaño |\n|---|---|---|")
+        for n in names:
+            p = os.path.join(d, n)
+            if os.path.exists(p):
+                paths.append(p)
+                md.append(f"| {n} | {_dur_text(p)} | {os.path.getsize(p) / 2**20:,.0f} MB |")
+        md.append("")
+    summary = "\n".join(md) or "No se ha generado ningún archivo (mira el progreso)."
+    yield ("\n".join(lines) + tail, summary, folder, [_thumb(p) for p in paths])
+
+
+def _thumb(path):
+    """(miniatura, pie) de un tramo: un fotograma a los 60 s, en output/.thumbs."""
+    tdir = os.path.join(OUT, ".thumbs")
+    os.makedirs(tdir, exist_ok=True)
+    img = os.path.join(tdir, os.path.splitext(os.path.basename(path))[0] + ".jpg")
+    if not os.path.exists(img):
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "60", "-i", path, "-frames:v", "1",
+                        "-vf", "scale=480:-2", img], check=False)
+    return (img, f"{os.path.basename(path)} · {_dur_text(path)}")
+
+
+def _dur_text(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                         capture_output=True, text=True)
+    try:
+        s = int(float(out.stdout.strip()))
+    except ValueError:
+        return "?"
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
+
+
+def _bring_to_front(title):
+    """Pone delante la ventana del Explorador de esa carpeta. Windows no deja
+    que un programa en segundo plano robe el foco, así que se abre detrás del
+    navegador; ponerla "siempre visible" un instante sí la trae delante."""
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.WinDLL("user32", use_last_error=True)
+    proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    u.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND] + [ctypes.c_int] * 4 + [wintypes.UINT]
+    found = []
+
+    @proto
+    def visit(hwnd, _):
+        cls, txt = ctypes.create_unicode_buffer(64), ctypes.create_unicode_buffer(512)
+        u.GetClassNameW(hwnd, cls, 64)
+        u.GetWindowTextW(hwnd, txt, 512)
+        if cls.value == "CabinetWClass" and title.lower() in txt.value.lower():
+            found.append(hwnd)
+        return True
+
+    for _ in range(20):  # la ventana tarda un poco en aparecer
+        u.EnumWindows(visit, 0)
+        if found:
+            break
+        time.sleep(0.2)
+    for hwnd in found[:1]:
+        if u.IsIconic(hwnd):
+            u.ShowWindow(hwnd, 9)  # restaurar si estaba minimizada
+        for order in (-1, -2):  # siempre visible -> normal
+            u.SetWindowPos(hwnd, order, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)
+    return bool(found)
+
+
+def open_folder(folder):
+    """Abre la carpeta de los tramos en el Explorador (la app corre en tu PC)."""
+    # Al recargar la página se pierde cuál era: entonces se abre entrada/.
+    folder = folder if folder and os.path.isdir(folder) else INBOX
+    try:
+        os.makedirs(folder, exist_ok=True)
+        os.startfile(folder)
+        _bring_to_front(os.path.basename(os.path.normpath(folder)))
+    except Exception as e:
+        gr.Warning(f"No se pudo abrir {folder}: {e}")
+        return
+    gr.Info(f"Carpeta abierta: {folder}")
+
+
 def list_results():
     dirs = sorted((d for d in glob.glob(os.path.join(OUT, "*")) if os.path.exists(os.path.join(d, "clips.json"))),
                   key=os.path.getmtime, reverse=True)
@@ -332,12 +466,28 @@ def build():
             with gr.Row():
                 go = gr.Button("✨ Crear clips", variant="primary", scale=3)
                 inbox = gr.Button(f"📂 Procesar la carpeta entrada/", scale=2)
+            with gr.Accordion("📥 Solo descargar (y trocear un directo largo)", open=False):
+                gr.Markdown("Baja las URLs de arriba (respeta \"Empezar en\" y \"Minutos\") sin sacar clips, "
+                            "y las parte en tramos. Un vídeo arrastrado arriba también se puede trocear.")
+                with gr.Row():
+                    tramo = gr.Number(value=30, label="Trocear cada (minutos, 0 = no trocear)", minimum=0, scale=2)
+                    to_inbox = gr.Checkbox(value=True, label="Dejar los tramos en entrada/ para procesarlos luego",
+                                           scale=3)
+                    dl_only = gr.Button("📥 Solo descargar", scale=2)
+                dl_summary = gr.Markdown()
+                dl_folder = gr.State(None)
+                open_btn = gr.Button("📂 Abrir carpeta de los tramos")
+                # Miniaturas (no el vídeo: Gradio recodificaría cada tramo para el navegador).
+                dl_pick = gr.Gallery(label="Tramos", columns=4, height="auto", object_fit="contain")
+                open_btn.click(open_folder, dl_folder, None)
             status = gr.Textbox(label="Progreso", lines=12, interactive=False)
             gallery = gr.Gallery(label="Clips", columns=4, height="auto", object_fit="contain")
             downloads = gr.File(label="Descargar", file_count="multiple", interactive=False)
             opts = [layout_mode, font, emojis, lang, min_s, max_s, game_view, lol_icons, sfx, color]
             go.click(process, [files, urls, start, minutes] + opts, [status, gallery, downloads])
             inbox.click(process_inbox, opts, [status, gallery, downloads])
+            dl_only.click(only_download, [files, urls, start, minutes, tramo, to_inbox],
+                          [status, dl_summary, dl_folder, dl_pick])
         with gr.Tab("Mis clips") as mis_clips:
             with gr.Row():
                 pick = gr.Dropdown(list_results(), value=None, label="Vídeo procesado", scale=4)
@@ -355,4 +505,4 @@ if __name__ == "__main__":
     os.makedirs(INBOX, exist_ok=True)
     build().queue().launch(server_name="127.0.0.1", server_port=int(os.environ.get("CLIPPER_PORT", 7860)),
                            inbrowser=not os.environ.get("CLIPPER_NO_BROWSER"),
-                           allowed_paths=[OUT], show_api=False)
+                           allowed_paths=[OUT, INBOX, os.path.join(ROOT, "downloads")], show_api=False)

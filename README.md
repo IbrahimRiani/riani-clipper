@@ -55,6 +55,10 @@ Doble clic en **`Clipper.bat`**. Se abre una página en tu navegador (solo en tu
 - **Lotes**: mete vídeos (o un `urls.txt` con una URL por línea) en la carpeta `entrada/` y
   pulsa "Procesar la carpeta entrada/". Lo procesado se mueve a `entrada/hechos/`.
 - Pestaña **Mis clips**: todo lo que has procesado antes.
+- **📥 Solo descargar**: baja las URLs sin sacar clips y las parte en tramos (30 min por
+  defecto, sin recodificar: tarda segundos). Si dejas marcado "Dejar los tramos en entrada/",
+  luego "Procesar la carpeta entrada/" saca los clips de todos los tramos seguidos. Por
+  comandos: `.venv\Scripts\python.exe tools\descargar.py URL --tramo 30 --entrada`.
 
 Para apagarla, cierra la ventana negra que se abre con el `.bat`.
 
