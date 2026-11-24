@@ -142,6 +142,8 @@ def organize(out_dir, cfg=None):
         except Exception as e:
             print(f"   ⚠️ Iconos del LoL omitidos ({type(e).__name__}: {e}).")
 
+    from . import publish
+    brand = publish.brand_overlay(cfg.get("campaign"), out_dir)
     summary = []
     for i, clip in enumerate(meta.get("shorts", []), start=1):
         title = clip.get("video_title_for_youtube_short") or f"clip {i}"
@@ -153,16 +155,18 @@ def organize(out_dir, cfg=None):
                                            lol_index, lol_cfg)
         if overlay_items:
             emoji_plan[i] = overlay_items
-        if subbed and emoji_plan.get(i):
+        if subbed and (emoji_plan.get(i) or brand):
             try:
                 from . import emojis
-                items = place_items(raw, emoji_plan[i], emoji_cfg, out_dir)
+                items = place_items(raw, emoji_plan[i], emoji_cfg, out_dir) if emoji_plan.get(i) else []
                 if emojis.overlay(subbed[0], final, items,
-                                  os.path.join(root, "assets", "emoji"), None, emoji_cfg):
+                                  os.path.join(root, "assets", "emoji"), None, emoji_cfg, brand=brand):
                     os.remove(subbed[0])
                     done = True
             except Exception as e:
                 print(f"   ⚠️ Emojis del clip {i} omitidos ({e}).")
+                if brand:
+                    print(f"   ❌ El clip {i} ha salido SIN el overlay obligatorio de la campaña: no lo subas.")
         if done:
             pass
         elif subbed:
@@ -201,7 +205,6 @@ def organize(out_dir, cfg=None):
         json.dump({"cost": meta.get("cost_analysis"), "campaign": cfg.get("campaign_id"), "clips": summary},
                   f, ensure_ascii=False, indent=2)
     # Texto listo para copiar al publicar, con lo obligatorio de la campaña.
-    from . import publish
     publish.write_txt(out_dir, cfg.get("campaign"))
     print(f"\n📁 {len(summary)} clip(s) en {out_dir}")
     for s in summary:

@@ -54,6 +54,9 @@ def merge_campaign(cfg, name):
             else:
                 a[k] = v
     merge(cfg, load_config(path))
+    from clipper_lib import publish
+    if publish.missing_overlay(name):
+        raise SystemExit(f"❌ Falta el overlay obligatorio de la campaña: {publish.missing_overlay(name)}")
     cfg["campaign_id"] = os.path.splitext(os.path.basename(path))[0]
     return cfg
 

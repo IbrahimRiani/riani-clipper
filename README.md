@@ -61,7 +61,7 @@ Doble clic en **`Clipper.bat`**. Se abre una página en tu navegador (solo en tu
   (`%LOCALAPPDATA%\ClaudeClipper\brave`, fuera del proyecto): se inicia sesión una vez y
   una luz por red dice si sigue guardada. No se automatiza nada: se publica a mano.
 - **Campaña**: cada archivo de `campanas/` guarda las reglas de una campaña (idioma, sonidos,
-  hashtags y nombres obligatorios, qué momentos elegir). Por comandos: `--campaign sypherpk`.
+  hashtags y nombres obligatorios, etiqueta fija, qué momentos elegir). Por comandos: `--campaign sypherpk`.
 - **📥 Solo descargar**: baja las URLs sin sacar clips y las parte en tramos (30 min por
   defecto, sin recodificar: tarda segundos). Si dejas marcado "Dejar los tramos en entrada/",
   luego "Procesar la carpeta entrada/" saca los clips de todos los tramos seguidos. Por

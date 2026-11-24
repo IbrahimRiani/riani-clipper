@@ -91,6 +91,8 @@ def main():
         chosen, why = lay.decide(analysis, lcfg.get("mode", "auto"), lcfg)
         print(f"🧩 Layout: {chosen} — {why}")
 
+    from clipper_lib import publish
+    brand = publish.brand_overlay(publish.load_campaign(summary.get("campaign")), debug)
     only = {int(x) for x in args.only.split(",")} if args.only else None
     for i, clip in enumerate(meta["shorts"], start=1):
         if only and i not in only:
@@ -124,9 +126,9 @@ def main():
                                                  lol_index, cfg.get("lol_icons", {}))
         if clip_items:
             plan[i] = clip_items
-        if plan.get(i):
-            items = organize.place_items(raw, plan[i], emoji_cfg, debug)
-            emojis.overlay(src, final, items, os.path.join(ROOT, "assets", "emoji"), None, emoji_cfg)
+        if plan.get(i) or brand:
+            items = organize.place_items(raw, plan[i], emoji_cfg, debug) if plan.get(i) else []
+            emojis.overlay(src, final, items, os.path.join(ROOT, "assets", "emoji"), None, emoji_cfg, brand=brand)
             if captioned:
                 os.remove(captioned)
         else:

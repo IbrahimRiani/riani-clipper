@@ -225,6 +225,10 @@ def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s,
     if not os.environ.get("DEEPSEEK_API_KEY") and not os.path.exists(os.path.join(ROOT, ".env")):
         yield "Falta la clave de DeepSeek: crea el archivo .env (ver README).", [], []
         return
+    if campaign and publish.missing_overlay(campaign):
+        yield ("❌ Falta el overlay obligatorio de la campaña. Descárgalo y guárdalo como:" + chr(10) +
+               publish.missing_overlay(campaign)), [], []
+        return
     cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view, lol_icons, sfx, color,
                             campaign)
     all_clips, files_out, lines = [], [], []
@@ -266,6 +270,8 @@ def process_inbox(*opts):
     last = None
     for last in process(vids, urls, None, None, *opts):
         yield last
+    if last and last[0].startswith(("❌", "Falta la clave")):
+        return  # no se ha procesado nada: los vídeos se quedan en entrada/
     # Mover lo procesado a entrada/hechos para no repetirlo.
     for v in vids:
         shutil.move(v, os.path.join(DONE, os.path.basename(v)))

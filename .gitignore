@@ -25,3 +25,7 @@ vendor/openshorts/fonts/TitanOne-Regular.ttf
 assets/lol/
 assets/sfx/*
 !assets/sfx/LEEME.txt
+
+# Imágenes de las campañas (son de cada creador)
+campanas/*.png
+campanas/*.jpg

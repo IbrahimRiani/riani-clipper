@@ -175,12 +175,13 @@ def image_for(emoji, cache_dir, style="3D", size=512):
     return None
 
 
-def overlay(video_in, video_out, items, cache_dir, y_center, cfg, x_center=None):
+def overlay(video_in, video_out, items, cache_dir, y_center, cfg, x_center=None, brand=None):
     """Superpone emojis / iconos y mezcla los sonidos meme en ``video_in``.
 
     Cada item: {"t", "e" (emoji) o "png" (icono, p. ej. del LoL), "s" (sonido,
     opcional), "x"/"y" (opcionales)}. ``y_center``/``x_center``: centro por
-    defecto en el frame 1080x1920 (x: centrado)."""
+    defecto en el frame 1080x1920 (x: centrado). ``brand``: etiqueta fija de una
+    campaña, visible todo el vídeo ({"path", "width", "x", "y"})."""
     def xexpr(it):
         x = it.get("x", x_center)
         return "(W-w)/2" if x is None else f"{int(x)}-w/2"
@@ -190,6 +191,12 @@ def overlay(video_in, video_out, items, cache_dir, y_center, cfg, x_center=None)
     inputs, chains, last = [], [], "[0:v]"
     k = 0
     sounds = []
+    if brand:
+        k += 1
+        inputs += ["-i", brand["path"]]
+        chains.append(f"[{k}:v]format=rgba,scale={int(brand['width'])}:-1:flags=lanczos[brand]")
+        chains.append(f"{last}[brand]overlay=x={int(brand['x'])}-w/2:y={int(brand['y'])}-h/2[v{k}]")
+        last = f"[v{k}]"
     for it in items:
         if it.get("s") in sfx_files:
             sounds.append((it["t"], sfx_files[it["s"]]))

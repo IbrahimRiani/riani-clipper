@@ -1,0 +1,29 @@
+# Campaña Boeshi GTA 6 (ClipLaunch, Content Rewards).
+# Solo directos recientes de https://www.twitch.tv/darealboeshi/videos
+transcription:
+  language: en
+layout:
+  mode: gaming            # juego + webcam fija
+lol_icons:
+  enabled: false
+campaign:
+  name: Boeshi GTA 6
+  mention: "Full stream at twitch.tv/darealboeshi"
+  hashtags: "#boeshi #gta6 #streamer #funnyclips"
+  names: [twitch.tv/darealboeshi]     # obligatorio en el texto de cada clip
+  english_only: true
+  overlay:                            # obligatorio y visible todo el vídeo
+    file: boeshi_overlay.png          # dentro de campanas/
+    width: 460
+    x: 540
+    y: 1200                           # bajo los subtítulos, sin tapar al personaje
+  hint: |
+    CAMPAIGN RULES (mandatory, they override everything above):
+    - Pick Boeshi's funniest and craziest moments: hilarious reactions, police chases,
+      unexpected encounters, chaotic gameplay.
+    - Top priority: jokes about how his voice sounds, his voice bits, and the mewing he
+      does when he is focused or scared.
+    - Pull every clippable moment of the video, not just one or two.
+    - Titles and hooks: English only, funny and creative, but true to what happens in the
+      clip. No misleading titles, no fake context, no invented quotes, no engagement bait.
+      They must not read like an ad.

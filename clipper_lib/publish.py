@@ -30,6 +30,33 @@ def load_campaign(name):
         return (yaml.safe_load(f) or {}).get("campaign") or {}
 
 
+def missing_overlay(name):
+    """Ruta del overlay obligatorio de la campaña si falta el archivo, o None."""
+    f = (load_campaign(name).get("overlay") or {}).get("file")
+    path = os.path.join(CAMPAIGNS, f) if f else None
+    return path if path and not os.path.exists(path) else None
+
+
+def brand_overlay(camp, tmp_dir):
+    """La etiqueta fija de la campaña lista para superponer: {"path", "width",
+    "x", "y"}, sin el margen transparente de la imagen. None si no hay."""
+    ov = (camp or {}).get("overlay") or {}
+    src = os.path.join(CAMPAIGNS, ov["file"]) if ov.get("file") else None
+    if not src:
+        return None
+    if not os.path.exists(src):
+        raise FileNotFoundError(f"Falta el overlay obligatorio de la campaña: {src}")
+    from PIL import Image
+    img = Image.open(src).convert("RGBA")
+    # Umbral: algunas imágenes traen píxeles casi invisibles hasta el borde.
+    solid = img.getchannel("A").point(lambda a: 255 if a > 40 else 0)
+    img = img.crop(solid.getbbox() or (0, 0, *img.size))
+    os.makedirs(os.path.join(tmp_dir, "debug"), exist_ok=True)
+    path = os.path.join(tmp_dir, "debug", "overlay_campana.png")
+    img.save(path)
+    return {"path": path, "width": ov.get("width", 460), "x": ov.get("x", 540), "y": ov.get("y", 1440)}
+
+
 def _read(path, default):
     try:
         with open(path, encoding="utf-8") as f:
