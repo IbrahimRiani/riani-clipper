@@ -24,8 +24,10 @@ def _insert_before(template, marker, extra):
     return template[:i] + extra + "\n" + template[i:] if i >= 0 else template + extra
 
 
-def patch(gemini_worker):
+def patch(gemini_worker, extra=""):
+    """``extra``: reglas de una campaña (las llaves se doblan por str.format)."""
+    hint = STREAM_HINT + extra.replace("{", "{{").replace("}", "}}")
     gemini_worker.SCORE_PROMPT_TEMPLATE = _insert_before(
-        gemini_worker.SCORE_PROMPT_TEMPLATE, "TRANSCRIPT_LANGUAGE:", STREAM_HINT)
+        gemini_worker.SCORE_PROMPT_TEMPLATE, "TRANSCRIPT_LANGUAGE:", hint)
     gemini_worker.DETAIL_PROMPT_TEMPLATE = _insert_before(
-        gemini_worker.DETAIL_PROMPT_TEMPLATE, "TRANSCRIPT_LANGUAGE:", STREAM_HINT)
+        gemini_worker.DETAIL_PROMPT_TEMPLATE, "TRANSCRIPT_LANGUAGE:", hint)

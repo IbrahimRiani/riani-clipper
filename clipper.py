@@ -43,6 +43,21 @@ def load_config(path):
         return yaml.safe_load(f) or {}
 
 
+def merge_campaign(cfg, name):
+    """Mezcla campanas/<name>.yaml (o una ruta) encima de la configuración."""
+    path = name if os.path.exists(name) else os.path.join(ROOT, "campanas", name + ".yaml")
+
+    def merge(a, b):
+        for k, v in b.items():
+            if isinstance(v, dict) and isinstance(a.get(k), dict):
+                merge(a[k], v)
+            else:
+                a[k] = v
+    merge(cfg, load_config(path))
+    cfg["campaign_id"] = os.path.splitext(os.path.basename(path))[0]
+    return cfg
+
+
 def apply_config(cfg):
     """Traduce config.yaml a las variables de entorno que lee OpenShorts."""
     from dotenv import load_dotenv
@@ -122,7 +137,7 @@ def _install_hooks(cfg):
     import transcribe_backends
 
     peaks_cfg = cfg.get("audio_peaks", {})
-    prompts.patch(gemini_worker)
+    prompts.patch(gemini_worker, (cfg.get("campaign") or {}).get("hint", ""))
 
     import subtitles
 
@@ -259,6 +274,7 @@ def main():
                    help="Solo con --url: minutos a descargar desde --start.")
     p.add_argument("--layout", default=None, choices=["auto", "gaming", "chatting", "podcast", "split"],
                    help="Forzar layout (por defecto: el de config.yaml, normalmente auto).")
+    p.add_argument("--campaign", help="Reglas de una campaña: campanas/<nombre>.yaml")
     args = p.parse_args()
 
     # La consola de Windows usa cp1252 y no sabe imprimir emojis: forzamos UTF-8.
@@ -269,6 +285,8 @@ def main():
             pass
 
     cfg = load_config(args.config)
+    if args.campaign:
+        merge_campaign(cfg, args.campaign)
     apply_config(cfg)
     _install_windows_shims()
     sys.path.insert(0, VENDOR)

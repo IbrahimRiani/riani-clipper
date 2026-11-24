@@ -55,6 +55,13 @@ Doble clic en **`Clipper.bat`**. Se abre una página en tu navegador (solo en tu
 - **Lotes**: mete vídeos (o un `urls.txt` con una URL por línea) en la carpeta `entrada/` y
   pulsa "Procesar la carpeta entrada/". Lo procesado se mueve a `entrada/hechos/`.
 - Pestaña **Mis clips**: todo lo que has procesado antes.
+- Pestaña **Publicar**: título, descripción y hashtags de cada clip (los escribe DeepSeek,
+  se pueden editar), texto listo para copiar (también en `publicar.txt`) y botones que copian
+  el texto y abren la web de subida de cada red. Se usa Brave (o Chrome/Edge) con perfil propio
+  (`%LOCALAPPDATA%\ClaudeClipper\brave`, fuera del proyecto): se inicia sesión una vez y
+  una luz por red dice si sigue guardada. No se automatiza nada: se publica a mano.
+- **Campaña**: cada archivo de `campanas/` guarda las reglas de una campaña (idioma, sonidos,
+  hashtags y nombres obligatorios, qué momentos elegir). Por comandos: `--campaign sypherpk`.
 - **📥 Solo descargar**: baja las URLs sin sacar clips y las parte en tramos (30 min por
   defecto, sin recodificar: tarda segundos). Si dejas marcado "Dejar los tramos en entrada/",
   luego "Procesar la carpeta entrada/" saca los clips de todos los tramos seguidos. Por

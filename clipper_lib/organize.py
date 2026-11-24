@@ -177,7 +177,7 @@ def organize(out_dir, cfg=None):
                 gaming = json.load(f)
         if os.path.exists(raw + ".debug.mp4"):
             shutil.move(raw + ".debug.mp4", os.path.join(debug, f"clip_{i:02d}_cajas.mp4"))
-        for p in [raw, raw + ".layout.json", raw + ".gaming.json"]:
+        for p in [raw, raw + ".layout.json", raw + ".gaming.json", raw + ".split.json"]:
             if os.path.exists(p):
                 shutil.move(p, os.path.join(debug, os.path.basename(p)))
         info = {
@@ -198,8 +198,11 @@ def organize(out_dir, cfg=None):
         shutil.move(p, os.path.join(debug, os.path.basename(p)))
     shutil.move(meta_path, os.path.join(debug, os.path.basename(meta_path)))
     with open(os.path.join(out_dir, "clips.json"), "w", encoding="utf-8") as f:
-        json.dump({"cost": meta.get("cost_analysis"), "clips": summary},
+        json.dump({"cost": meta.get("cost_analysis"), "campaign": cfg.get("campaign_id"), "clips": summary},
                   f, ensure_ascii=False, indent=2)
+    # Texto listo para copiar al publicar, con lo obligatorio de la campaña.
+    from . import publish
+    publish.write_txt(out_dir, cfg.get("campaign"))
     print(f"\n📁 {len(summary)} clip(s) en {out_dir}")
     for s in summary:
         print(f"   {s['file']}  ({s['duration']:.0f}s, score {s['score']})")

@@ -5,6 +5,7 @@ Se abre http://127.0.0.1:7860 en tu navegador. Nada sale de tu PC salvo el
 texto que se manda a DeepSeek para elegir los momentos.
 """
 import copy
+import functools
 import glob
 import json
 import os
@@ -16,6 +17,8 @@ import time
 
 import gradio as gr
 import yaml
+
+from clipper_lib import publish, sessions
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
@@ -57,7 +60,7 @@ def base_config():
 
 
 def write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view="full",
-                 lol_icons=True, sfx=True, color=None):
+                 lol_icons=True, sfx=True, color=None, campaign=None):
     """Copia de config.yaml con lo elegido en la interfaz (config.yaml no se toca)."""
     cfg = copy.deepcopy(base_config())
     cfg.setdefault("captions", {}).setdefault("overrides", {})["font_name"] = font
@@ -71,6 +74,10 @@ def write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view="full"
     cfg.setdefault("clips", {}).update({"min_seconds": int(min_s), "max_seconds": int(max_s)})
     cfg.setdefault("layout", {})["mode"] = layout_mode
     cfg["layout"]["game_view"] = game_view
+    if campaign:
+        # Lo que diga la campaña manda sobre lo elegido en la interfaz.
+        import clipper
+        clipper.merge_campaign(cfg, campaign)
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, ".app_config.yaml")
     with open(path, "w", encoding="utf-8") as f:
@@ -209,7 +216,7 @@ def clips_of(out_dir):
 
 
 def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s, max_s,
-            game_view="full", lol_icons=True, sfx=True, color=None):
+            game_view="full", lol_icons=True, sfx=True, color=None, campaign=None):
     jobs = [(f if isinstance(f, str) else f.name, False) for f in (files or [])]
     jobs += [(u.strip(), True) for u in (urls or "").splitlines() if u.strip().startswith("http")]
     if not jobs:
@@ -218,7 +225,8 @@ def process(files, urls, start, minutes, layout_mode, font, emojis, lang, min_s,
     if not os.environ.get("DEEPSEEK_API_KEY") and not os.path.exists(os.path.join(ROOT, ".env")):
         yield "Falta la clave de DeepSeek: crea el archivo .env (ver README).", [], []
         return
-    cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view, lol_icons, sfx, color)
+    cfg_path = write_config(font, emojis, lang, min_s, max_s, layout_mode, game_view, lol_icons, sfx, color,
+                            campaign)
     all_clips, files_out, lines = [], [], []
     for k, (src, is_url) in enumerate(jobs, start=1):
         state = {"log": [], "frac": 0.0, "out": None}
@@ -331,13 +339,13 @@ def only_download(files, urls, start, minutes, tramo, to_inbox):
     yield ("\n".join(lines) + tail, summary, folder, [_thumb(p) for p in paths])
 
 
-def _thumb(path):
-    """(miniatura, pie) de un tramo: un fotograma a los 60 s, en output/.thumbs."""
+def _thumb(path, at=60, key=None):
+    """(miniatura, pie) de un vídeo: un fotograma a los ``at`` s, en output/.thumbs."""
     tdir = os.path.join(OUT, ".thumbs")
     os.makedirs(tdir, exist_ok=True)
-    img = os.path.join(tdir, os.path.splitext(os.path.basename(path))[0] + ".jpg")
-    if not os.path.exists(img):
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "60", "-i", path, "-frames:v", "1",
+    img = os.path.join(tdir, os.path.splitext(key or os.path.basename(path))[0] + ".jpg")
+    if not os.path.exists(img) or os.path.getmtime(img) < os.path.getmtime(path):
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(at), "-i", path, "-frames:v", "1",
                         "-vf", "scale=480:-2", img], check=False)
     return (img, f"{os.path.basename(path)} · {_dur_text(path)}")
 
@@ -412,6 +420,124 @@ def show_results(name):
     return items, [i[0] for i in items]
 
 
+def pub_load(name):
+    """Al elegir un vídeo: sus clips y la campaña con la que se sacaron."""
+    if not name:
+        return gr.update(choices=[], value=None), ""
+    out = os.path.join(OUT, name)
+    items = publish.posts(out)
+    camp = publish.campaign_of(out) or ""
+    return (gr.update(choices=[(p["file"], p["file"]) for p in items],
+                      value=items[0]["file"] if items else None),
+            camp if camp in publish.campaigns() else "")
+
+
+def pub_show(name, camp_name, clip):
+    """Textos, miniatura y avisos del clip elegido."""
+    empty = (None, "", "", "", "", "")
+    if not name or not clip:
+        return empty
+    camp = publish.load_campaign(camp_name)
+    post = next((p for p in publish.posts(os.path.join(OUT, name), camp) if p["file"] == clip), None)
+    if not post:
+        return empty
+    img = _thumb(os.path.join(OUT, name, clip), at=5, key=f"{name}_{clip}")[0]
+    return (img, post["title"], post["description"], post["hashtags"], *_pub_result(post, camp))
+
+
+def _pub_result(post, camp):
+    warn = publish.problems(post, camp)
+    return (publish.final_text(post, camp),
+            "\n".join("⚠️ " + w for w in warn) or "✅ El texto cumple lo que se puede comprobar solo.")
+
+
+def pub_edit(camp_name, title, desc, tags):
+    """Rehace el texto final mientras se edita."""
+    return _pub_result({"title": title, "description": desc, "hashtags": tags},
+                       publish.load_campaign(camp_name))
+
+
+def pub_save(name, camp_name, clip, title, desc, tags):
+    if not name or not clip:
+        gr.Warning("Elige antes un vídeo y un clip.")
+        return
+    publish.save(os.path.join(OUT, name), clip, title, desc, tags, publish.load_campaign(camp_name))
+    gr.Info("Guardado. También está en publicar.txt, junto a los clips.")
+
+
+def pub_locate(name, clip):
+    """Abre el Explorador con el clip ya seleccionado, para arrastrarlo a la web."""
+    path = os.path.join(OUT, name or "", clip or "")
+    if not clip or not os.path.isfile(path):
+        gr.Warning("Elige antes un vídeo y un clip.")
+        return
+    # Con "explorer /select" no se selecciona si la carpeta ya estaba abierta.
+    import ctypes
+    from ctypes import wintypes
+    sh, ole = ctypes.OleDLL("shell32"), ctypes.OleDLL("ole32")
+    sh.SHParseDisplayName.argtypes = [wintypes.LPCWSTR, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+                                      wintypes.ULONG, ctypes.c_void_p]
+    sh.SHOpenFolderAndSelectItems.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.c_void_p, wintypes.DWORD]
+    ole.CoTaskMemFree.argtypes, ole.CoTaskMemFree.restype = [ctypes.c_void_p], None
+    ole.CoUninitialize.restype = None
+    pidl = ctypes.c_void_p()
+    try:
+        ole.CoInitialize(None)
+        try:
+            sh.SHParseDisplayName(os.path.abspath(path), None, ctypes.byref(pidl), 0, None)
+            sh.SHOpenFolderAndSelectItems(pidl, 0, None, 0)
+        finally:
+            if pidl:
+                ole.CoTaskMemFree(pidl)
+            ole.CoUninitialize()
+    except OSError as e:
+        gr.Warning(f"No se pudo mostrar el clip: {e}")
+        return
+    _bring_to_front(os.path.basename(os.path.dirname(path)))
+
+
+def session_lights():
+    """Una luz por red: verde con sesión, roja sin ella, gris si no se sabe aún."""
+    state, is_open = sessions.status()
+    cells = []
+    for k, n in sessions.NETWORKS.items():
+        color, txt = {True: ("#22c55e", "conectada"), False: ("#ef4444", "sin sesión"),
+                      None: ("#9ca3af", "sin comprobar")}[state[k]]
+        cells.append(f'<div style="display:flex;align-items:center;gap:8px"><span style="width:14px;height:14px;'
+                     f'border-radius:50%;background:{color};box-shadow:0 0 8px {color}"></span>'
+                     f'<b>{n["name"]}</b> {txt}</div>')
+    note = ("El navegador de la app está abierto: cierra su ventana para comprobar las sesiones."
+            if is_open else "Sesiones guardadas en el navegador de la app.")
+    return (f'<div style="display:flex;gap:28px;flex-wrap:wrap;margin:6px 0">{"".join(cells)}</div>'
+            f'<div style="opacity:.7;font-size:.9em">{note}</div>')
+
+
+def _open_net(url):
+    try:
+        sessions.open_url(url)
+        return True
+    except Exception as e:
+        gr.Warning(f"No se pudo abrir el navegador: {e}")
+        return False
+
+
+def net_login(key):
+    if _open_net(sessions.NETWORKS[key]["login"]):
+        gr.Info("Inicia sesión en la ventana que se ha abierto y ciérrala al terminar: la luz se actualiza sola.")
+
+
+def net_prepare(key, name, clip, text):
+    """Abre la web de subida. El texto ya lo ha copiado el navegador (js del botón)."""
+    n = sessions.NETWORKS[key]
+    if not name or not clip:
+        gr.Warning("Elige antes un vídeo y un clip.")
+        return
+    if sessions.status()[0][key] is False:
+        gr.Warning(f"{n['name']} no tiene sesión iniciada: entra primero con su botón.")
+    if _open_net(n["upload"]):
+        gr.Info(f"Texto copiado. Arrastra {clip} a la web, pega con Ctrl+V y publica tú.")
+
+
 def build():
     cfg = base_config()
     font_list = fonts()
@@ -430,6 +556,9 @@ def build():
                         start = gr.Textbox(label="Empezar en (solo URLs, opcional)", placeholder="1:30:00")
                         minutes = gr.Number(label="Minutos a bajar (solo URLs, opcional)", value=None)
                 with gr.Column(scale=2):
+                    campaign = gr.Dropdown([("Ninguna", "")] + [(c, c) for c in publish.campaigns()], value="",
+                                           label="Campaña",
+                                           info="Aplica sus reglas (idioma, sonidos, hashtags…) por encima de lo de abajo")
                     layout_mode = gr.Dropdown([("auto", "auto"), ("gaming", "gaming"), ("chatting", "chatting"), ("podcast", "podcast"),
                                                ("pantalla partida", "split")], value="auto",
                                               label="Tipo de vídeo",
@@ -483,7 +612,7 @@ def build():
             status = gr.Textbox(label="Progreso", lines=12, interactive=False)
             gallery = gr.Gallery(label="Clips", columns=4, height="auto", object_fit="contain")
             downloads = gr.File(label="Descargar", file_count="multiple", interactive=False)
-            opts = [layout_mode, font, emojis, lang, min_s, max_s, game_view, lol_icons, sfx, color]
+            opts = [layout_mode, font, emojis, lang, min_s, max_s, game_view, lol_icons, sfx, color, campaign]
             go.click(process, [files, urls, start, minutes] + opts, [status, gallery, downloads])
             inbox.click(process_inbox, opts, [status, gallery, downloads])
             dl_only.click(only_download, [files, urls, start, minutes, tramo, to_inbox],
@@ -497,6 +626,48 @@ def build():
             pick.change(show_results, pick, [g2, d2])
             refresh.click(lambda: gr.update(choices=list_results()), None, pick)
             mis_clips.select(lambda: gr.update(choices=list_results()), None, pick)
+        with gr.Tab("Publicar") as publicar:
+            with gr.Group():
+                with gr.Row():
+                    lights = gr.HTML(session_lights, padding=True)
+                    for key, n in sessions.NETWORKS.items():
+                        gr.Button(f"🔑 Entrar en {n['name']}", scale=0, min_width=170).click(
+                            functools.partial(net_login, key), None, None)
+            gr.Timer(5).tick(session_lights, None, lights, show_progress="hidden")
+            gr.Markdown("Elige un clip, revisa el texto, cópialo y súbelo. **Lee el texto antes de publicar**: "
+                        "lo escribe la IA y a veces exagera o se inventa cosas.")
+            with gr.Row():
+                p_video = gr.Dropdown(list_results(), value=None, label="Vídeo procesado", scale=3)
+                p_camp = gr.Dropdown([("Ninguna", "")] + [(c, c) for c in publish.campaigns()], value="",
+                                     label="Campaña", scale=1)
+                p_clip = gr.Dropdown([], value=None, label="Clip", scale=3)
+            with gr.Row():
+                p_img = gr.Image(show_label=False, interactive=False, height=420, scale=1,
+                                 show_download_button=False)
+                with gr.Column(scale=2):
+                    p_title = gr.Textbox(label="Título (YouTube)", show_copy_button=True)
+                    p_desc = gr.Textbox(label="Descripción", lines=2, show_copy_button=True)
+                    p_tags = gr.Textbox(label="Hashtags", show_copy_button=True)
+                    p_final = gr.Textbox(label="Texto listo para pegar (TikTok, Instagram y YouTube)", lines=4,
+                                         interactive=False, show_copy_button=True)
+                    p_warn = gr.Markdown()
+                    with gr.Row():
+                        p_save = gr.Button("💾 Guardar cambios")
+                        p_loc = gr.Button("📂 Mostrar el clip en la carpeta")
+                    with gr.Row():
+                        for key, n in sessions.NETWORKS.items():
+                            gr.Button(f"⬆️ Subir a {n['name']}", variant="primary").click(
+                                functools.partial(net_prepare, key), [p_video, p_clip, p_final], None,
+                                js="(v, c, t) => { if (c) navigator.clipboard.writeText(t).catch(() => {}); return [v, c, t]; }")
+            shown = [p_img, p_title, p_desc, p_tags, p_final, p_warn]
+            p_video.change(pub_load, p_video, [p_clip, p_camp]).then(pub_show, [p_video, p_camp, p_clip], shown)
+            p_clip.input(pub_show, [p_video, p_camp, p_clip], shown)
+            p_camp.input(pub_show, [p_video, p_camp, p_clip], shown)
+            for ctl in (p_title, p_desc, p_tags):
+                ctl.input(pub_edit, [p_camp, p_title, p_desc, p_tags], [p_final, p_warn])
+            p_save.click(pub_save, [p_video, p_camp, p_clip, p_title, p_desc, p_tags], None)
+            p_loc.click(pub_locate, [p_video, p_clip], None)
+            publicar.select(lambda: gr.update(choices=list_results()), None, p_video)
         gr.Markdown(f"Carpeta de resultados: `{OUT}` · Carpeta de entrada para lotes: `{INBOX}`")
     return demo
 

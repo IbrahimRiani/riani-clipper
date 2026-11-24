@@ -1,0 +1,26 @@
+# Campaña SypherPK x Fortnite Creative (Content Rewards). Solo cambia lo que difiere de config.yaml.
+# Uso: .venv\Scripts\python.exe clipper.py --input <vídeo> --campaign sypherpk
+transcription:
+  language: en            # nada de texto que no sea inglés
+layout:
+  mode: gaming            # webcam fija de SypherPK + juego
+lol_icons:
+  enabled: false          # "Logos of any kind are not allowed"
+emojis:
+  sfx_enabled: false      # los sonidos (fail, disparo) pueden dejarlos en mal lugar
+campaign:
+  name: SypherPK - Fortnite Creative
+  mention: "SypherPK, Maddynf & Replays"
+  hashtags: "#fortnitecreative #uefn"
+  names: [Sypher, Maddynf, Replays]   # el texto debe nombrar al menos a uno
+  english_only: true
+  hint: |
+    CAMPAIGN RULES (mandatory, they override everything above, including "rage" and "fails"):
+    - Only pick moments where SypherPK plays TOGETHER with his friends Maddynf and Replays
+      and their interaction (banter, jokes, teamwork, friendly competition) is the focus.
+      Skip solo moments and moments where he only talks to chat.
+    - Keep it positive and fun. Nothing that makes SypherPK, Maddynf, Replays, Fortnite,
+      Epic Games, UEFN or the maps look bad. No insults, complaints about the game, drama,
+      rage, scandal or invented conflict.
+    - Titles and hooks: English only, true to what happens in the clip, no clickbait
+      narrative. Do not invent who said what.
